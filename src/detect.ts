@@ -28,7 +28,7 @@ async function detectFromProcfile(cwd: string): Promise<DetectedService[] | null
 }
 
 async function detectFromDockerCompose(cwd: string): Promise<DetectedService[] | null> {
-  const raw = await tryRead(join(cwd, 'docker-compose.yml'))
+  const raw = await tryRead(join(cwd, 'docker-compose.yml')) ?? await tryRead(join(cwd, 'docker-compose.yaml'))
   if (!raw) return null
   try {
     const doc = yaml.load(raw) as Record<string, unknown>

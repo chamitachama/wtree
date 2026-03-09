@@ -9,6 +9,9 @@ const TEMPLATE = `{
   // Default branch for new workspaces
   "defaultBranch": "main",
 
+  // Directory where worktrees are created
+  "workspacesDir": ".worktrees",
+
   // Port offset between workspaces: slot 1 = basePort+100, slot 2 = basePort+200
   "portStep": 100,
 
@@ -69,6 +72,7 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
   if (services) {
     const config = {
       defaultBranch: 'main',
+      workspacesDir: '.worktrees',
       portStep: 100,
       services: services.map(s => ({
         name: s.name,
