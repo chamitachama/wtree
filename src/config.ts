@@ -27,14 +27,19 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<WtreeConf
       defaultBranch: parsed.defaultBranch ?? 'main',
       workspacesDir: parsed.workspacesDir ?? '.worktrees',
       portStep: parsed.portStep ?? 100,
-      services: parsed.services.map((s: Partial<ServiceConfig>) => ({
-        name: s.name!,
-        command: s.command!,
-        cwd: s.cwd ?? '.',
-        basePort: s.basePort!,
-        portEnvVar: s.portEnvVar ?? 'PORT',
-        env: s.env ?? {},
-      })),
+      services: parsed.services.map((s: Partial<ServiceConfig>, i: number) => {
+        if (!s.name) throw new Error(`Service at index ${i} is missing required field "name"`)
+        if (!s.command) throw new Error(`Service "${s.name}" is missing required field "command"`)
+        if (!s.basePort) throw new Error(`Service "${s.name}" is missing required field "basePort"`)
+        return {
+          name: s.name,
+          command: s.command,
+          cwd: s.cwd ?? '.',
+          basePort: s.basePort,
+          portEnvVar: s.portEnvVar ?? 'PORT',
+          env: s.env ?? {},
+        }
+      }),
     }
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
