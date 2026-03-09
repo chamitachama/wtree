@@ -5,6 +5,7 @@ import { createCommand } from './commands/create.js'
 import { listCommand } from './commands/list.js'
 import { stopCommand } from './commands/stop.js'
 import { destroyCommand } from './commands/destroy.js'
+import { initCommand } from './commands/init.js'
 
 program
   .name('wtree')
@@ -16,5 +17,6 @@ program.command('create <name>').description('Create a new branch and workspace'
 program.command('list').description('Show all workspaces').action(listCommand)
 program.command('stop <name>').description('Stop a workspace (keeps worktree)').action(stopCommand)
 program.command('destroy <name>').description('Stop and delete a workspace (requires typing DELETE)').action(destroyCommand)
+program.command('init').description('Set up wtree in the current project').action(initCommand)
 
 program.parse()
