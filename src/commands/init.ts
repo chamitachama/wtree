@@ -48,7 +48,8 @@ function ask(question: string): Promise<string> {
 async function updateGitignore(cwd: string): Promise<void> {
   const path = join(cwd, '.gitignore')
   const existing = existsSync(path) ? await readFile(path, 'utf-8') : ''
-  const toAdd = ['.worktrees/', '.wtree/state.json'].filter(e => !existing.includes(e))
+  const lines = existing.split('\n').map(l => l.trim())
+  const toAdd = ['.worktrees/', '.wtree/state.json'].filter(e => !lines.includes(e))
   if (toAdd.length > 0) {
     const prefix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : ''
     await appendFile(path, prefix + toAdd.join('\n') + '\n')
