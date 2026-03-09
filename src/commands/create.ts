@@ -25,11 +25,14 @@ export async function createCommand(name: string, options: { from?: string }): P
   for (const service of config.services) {
     const port = ports[service.name]
     const cwd = `${worktreePath}/${service.cwd.replace('./', '')}`
+    const serviceId = `${name}:${service.name}`
+    const logFile = `${root}/.wtree/logs/${serviceId.replace(':', '-')}.log`
     pids[service.name] = await pm.start(
-      `${name}:${service.name}`,
+      serviceId,
       service.command,
       cwd,
-      { [service.portEnvVar]: String(port), ...resolveEnv(service.env, ports) }
+      { [service.portEnvVar]: String(port), ...resolveEnv(service.env, ports) },
+      logFile
     )
     console.log(chalk.green(`✓ ${service.name} → http://localhost:${port}`))
   }
