@@ -28,7 +28,7 @@ export function resolveEnv(
 ): Record<string, string> {
   const resolved: Record<string, string> = {}
   for (const [key, value] of Object.entries(env)) {
-    resolved[key] = value.replace(/\{(\w+)\.port\}/g, (match, name) => {
+    resolved[key] = value.replace(/\{(\w+)\.port\}/g, (_, name) => {
       if (!(name in allPorts)) {
         console.warn(`wtree: env var "${key}" references unknown service "${name}"`)
         return ''

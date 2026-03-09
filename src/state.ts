@@ -14,9 +14,16 @@ export interface WorkspaceState {
 
 export class StateManager {
   private statePath: string
+  private dirReady = false
 
   constructor(private root: string) {
     this.statePath = join(root, '.wtree', 'state.json')
+  }
+
+  private async ensureDir(): Promise<void> {
+    if (this.dirReady) return
+    await mkdir(join(this.root, '.wtree'), { recursive: true })
+    this.dirReady = true
   }
 
   private async read(): Promise<WorkspaceState[]> {
@@ -26,7 +33,7 @@ export class StateManager {
   }
 
   private async write(workspaces: WorkspaceState[]): Promise<void> {
-    await mkdir(join(this.root, '.wtree'), { recursive: true })
+    await this.ensureDir()
     const tmp = this.statePath + '.tmp'
     await writeFile(tmp, JSON.stringify({ workspaces }, null, 2))
     await rename(tmp, this.statePath)

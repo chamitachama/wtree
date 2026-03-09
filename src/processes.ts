@@ -4,7 +4,7 @@ export class ProcessManager {
   private procs = new Map<string, { pid: number; kill: () => void }>()
 
   constructor() {
-    process.on('SIGINT', () => { this.stopAll(); process.exit(0) })
+    process.once('SIGINT', async () => { await this.stopAll(); process.exit(0) })
   }
 
   async start(id: string, command: string, cwd: string, env: Record<string, string>): Promise<number> {
@@ -23,5 +23,5 @@ export class ProcessManager {
     if (p) { p.kill(); this.procs.delete(id); await new Promise(r => setTimeout(r, 200)) }
   }
 
-  stopAll(): void { for (const id of [...this.procs.keys()]) this.stop(id) }
+  async stopAll(): Promise<void> { await Promise.all([...this.procs.keys()].map(id => this.stop(id))) }
 }
