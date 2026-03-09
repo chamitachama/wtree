@@ -48,4 +48,11 @@ describe('loadConfig', () => {
     const config = await loadConfig(TMP)
     expect(config.portStep).toBe(50)
   })
+
+  it('throws with field name when service is missing command', async () => {
+    writeFileSync(join(TMP, '.wtree.json'), JSON.stringify({
+      services: [{ name: 'web', basePort: 3000 }]
+    }))
+    await expect(loadConfig(TMP)).rejects.toThrow('"command"')
+  })
 })
