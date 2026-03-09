@@ -15,14 +15,15 @@ async function tryRead(path: string): Promise<string | null> {
 async function detectFromProcfile(cwd: string): Promise<DetectedService[] | null> {
   const raw = await tryRead(join(cwd, 'Procfile'))
   if (!raw) return null
+  let nonWebIdx = 0
   const services = raw.trim().split('\n')
-    .map(line => line.match(/^(\w+):\s*(.+)$/))
+    .map(line => line.match(/^([\w-]+):\s*(.+)$/))
     .filter(Boolean)
-    .map((m, i) => ({
-      name: m![1],
-      command: m![2].trim(),
-      basePort: m![1] === 'web' ? 3000 : 8000 + i * 100,
-    }))
+    .map((m) => {
+      const isWeb = m![1] === 'web'
+      const basePort = isWeb ? 3000 : 8000 + nonWebIdx++ * 100
+      return { name: m![1], command: m![2].trim(), basePort }
+    })
   return services.length > 0 ? services : null
 }
 
@@ -34,8 +35,10 @@ async function detectFromDockerCompose(cwd: string): Promise<DetectedService[] |
     const services = doc?.services as Record<string, { ports?: string[] }> | undefined
     if (!services) return null
     const result = Object.entries(services).map(([name, svc]) => {
-      const portStr = svc.ports?.[0] ?? '3000:3000'
-      const basePort = parseInt(portStr.split(':')[0], 10) || 3000
+      const portStr = String(svc.ports?.[0] ?? '3000:3000')
+      const parts = portStr.split(':')
+      const hostPort = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+      const basePort = parseInt(hostPort, 10) || 3000
       return { name, command: `# fill in start command for ${name}`, basePort }
     })
     return result.length > 0 ? result : null
