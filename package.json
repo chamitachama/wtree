@@ -4,10 +4,19 @@
   "description": "Run multiple git worktrees in parallel with isolated ports",
   "type": "module",
   "main": "dist/index.js",
-  "bin": { "wtree": "dist/index.js" },
-  "files": ["dist"],
-  "engines": { "node": ">=18" },
-  "repository": { "type": "git", "url": "https://github.com/chamitachama/wtree" },
+  "bin": {
+    "wtree": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chamitachama/wtree"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
@@ -18,9 +27,11 @@
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
     "get-port": "^7.1.0",
+    "json5": "^2.2.3",
     "simple-git": "^3.32.3"
   },
   "devDependencies": {
+    "@types/json5": "^0.0.30",
     "@types/node": "^25.3.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

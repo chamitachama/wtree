@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises'
 import { join } from 'path'
+import JSON5 from 'json5'
 
 export interface ServiceConfig {
   name: string
@@ -21,7 +22,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<WtreeConf
   const configPath = join(cwd, '.wtree.json')
   try {
     const raw = await readFile(configPath, 'utf-8')
-    const parsed = JSON.parse(raw)
+    const parsed = JSON5.parse(raw)
     return {
       defaultBranch: parsed.defaultBranch ?? 'main',
       workspacesDir: parsed.workspacesDir ?? '.worktrees',
