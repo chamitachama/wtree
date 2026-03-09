@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, rename } from 'fs/promises'
 import { join } from 'path'
 
 export interface WorkspaceState {
@@ -27,7 +27,9 @@ export class StateManager {
 
   private async write(workspaces: WorkspaceState[]): Promise<void> {
     await mkdir(join(this.root, '.wtree'), { recursive: true })
-    await writeFile(this.statePath, JSON.stringify({ workspaces }, null, 2))
+    const tmp = this.statePath + '.tmp'
+    await writeFile(tmp, JSON.stringify({ workspaces }, null, 2))
+    await rename(tmp, this.statePath)
   }
 
   async getAll(): Promise<WorkspaceState[]> { return this.read() }
