@@ -10,12 +10,24 @@ npm install -g wtree
 
 ## Setup
 
-Add `.wtree.json` to your project root:
+In your project root:
 
-```json
+```bash
+wtree init
+```
+
+Auto-detects services from Procfile, docker-compose, or package.json and writes `.wtree.json`. If nothing is detected, a commented template is written for you to fill in.
+
+### Manual config
+
+```json5
 {
+  // Default branch for new workspaces
   "defaultBranch": "main",
+
+  // Port offset between workspaces (slot 1 = basePort+100, slot 2 = basePort+200)
   "portStep": 100,
+
   "services": [
     {
       "name": "frontend",
@@ -38,17 +50,13 @@ Add `.wtree.json` to your project root:
 }
 ```
 
-Add to `.gitignore`:
-
-```
-.worktrees/
-.wtree/state.json
-```
+Use `{service.port}` in env values to reference another service's assigned port.
 
 ## Commands
 
 ```bash
-wtree open <branch>                # open an existing branch
+wtree init                         # detect services + write .wtree.json
+wtree open <branch>                # open an existing branch as a workspace
 wtree create <name>                # create new branch + workspace
 wtree create <name> --from <base>  # branch off a specific base
 wtree list                         # see all workspaces + ports
@@ -56,7 +64,7 @@ wtree stop <name>                  # stop processes, keep worktree
 wtree destroy <name>               # stop + delete (requires typing DELETE)
 ```
 
-## End-to-End Validation
+## Example
 
 ```bash
 # Terminal 1 — in your project root:
@@ -75,8 +83,6 @@ wtree list
 
 cat .wtree/STATUS.md
 # Full status with commits and conflict warnings
-
-# Open http://localhost:3100 and http://localhost:3200 — both load independently
 
 # Cleanup:
 wtree destroy my-branch-1
