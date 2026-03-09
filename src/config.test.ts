@@ -31,6 +31,15 @@ describe('loadConfig', () => {
     await expect(loadConfig(TMP)).rejects.toThrow('No .wtree.json found')
   })
 
+  it('parses .wtree.json with inline comments', async () => {
+    writeFileSync(join(TMP, '.wtree.json'), `{
+      // default branch
+      "services": [{ "name": "web", "command": "npm start", "basePort": 3000 }]
+    }`)
+    const config = await loadConfig(TMP)
+    expect(config.services[0].name).toBe('web')
+  })
+
   it('preserves custom portStep', async () => {
     writeFileSync(join(TMP, '.wtree.json'), JSON.stringify({
       portStep: 50,
