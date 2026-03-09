@@ -38,13 +38,17 @@ Then add `.wtree.json` to your project root.
 {
   "defaultBranch": "main",
   "workspacesDir": ".worktrees",
+  "portStep": 100,
   "services": [
     {
       "name": "frontend",
       "command": "pnpm dev",
       "cwd": "./frontend",
       "basePort": 3000,
-      "portEnvVar": "PORT"
+      "portEnvVar": "PORT",
+      "env": {
+        "NEXT_PUBLIC_API_URL": "http://localhost:{backend.port}"
+      }
     },
     {
       "name": "backend",
@@ -59,9 +63,39 @@ Then add `.wtree.json` to your project root.
 
 - `defaultBranch` — base branch for new workspaces (can be overridden per command)
 - `workspacesDir` — where worktrees are stored on disk
+- `portStep` — port gap between workspaces (default: `100`). Workspace 1 gets `basePort + 100`, workspace 2 gets `basePort + 200`, etc.
 - `services` — list of processes to start per workspace
-- `basePort` — each workspace gets `basePort + N` (auto-incremented, no conflicts)
+- `basePort` — starting port for this service
 - `portEnvVar` — environment variable injected so your app knows which port to use
+- `env` — optional extra environment variables; use `{serviceName.port}` to reference another service's assigned port in the same workspace
+
+## Port Allocation
+
+With `portStep: 100` and two services:
+
+| Workspace | frontend | backend |
+|-----------|----------|---------|
+| 1st       | 3100     | 8100    |
+| 2nd       | 3200     | 8200    |
+| 3rd       | 3300     | 8300    |
+
+Easy to remember, and leaves room in case a service needs adjacent ports.
+
+## Inter-Service Routing
+
+Each workspace is fully self-contained. `wtree` resolves all `{service.port}` templates before launching any process, so services always talk to each other within the same workspace — never cross-workspace.
+
+**Workspace 1 (`fix-login`) gets:**
+```
+PORT=3100
+NEXT_PUBLIC_API_URL=http://localhost:8100
+```
+
+**Workspace 2 (`fix-payment`) gets:**
+```
+PORT=3200
+NEXT_PUBLIC_API_URL=http://localhost:8200
+```
 
 ---
 
