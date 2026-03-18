@@ -67,22 +67,61 @@ function parseHostPort(portStr: string): number {
   return parseInt(hostPort, 10) || 0
 }
 
+interface DockerComposeService {
+  ports?: string[]
+  image?: string
+  build?: { context?: string }
+}
+
 async function detectFromDockerCompose(cwd: string): Promise<DetectedService[] | null> {
   const raw = await tryRead(join(cwd, 'docker-compose.yml')) ?? await tryRead(join(cwd, 'docker-compose.yaml'))
   if (!raw) return null
+  
+  const pm = await detectPackageManager(cwd)
+  const runCmd = pm === 'yarn' ? 'yarn' : pm === 'bun' ? 'bun run' : `${pm} run`
+  
   try {
     const doc = yaml.load(raw) as Record<string, unknown>
-    const services = doc?.services as Record<string, { ports?: string[]; image?: string }> | undefined
+    const services = doc?.services as Record<string, DockerComposeService> | undefined
     if (!services) return null
     
-    // Filter out infrastructure services
-    const result = Object.entries(services)
-      .filter(([name, svc]) => !isInfraService(name, svc.image).match)
-      .map(([name, svc]) => {
-        const portStr = String(svc.ports?.[0] ?? '3000:3000')
-        const basePort = parseHostPort(portStr) || 3000
-        return { name, command: `# fill in start command for ${name}`, basePort }
-      })
+    const result: DetectedService[] = []
+    
+    for (const [name, svc] of Object.entries(services)) {
+      // Skip infrastructure services
+      if (isInfraService(name, svc.image).match) continue
+      
+      const portStr = String(svc.ports?.[0] ?? '3000:3000')
+      const basePort = parseHostPort(portStr) || 3000
+      
+      // Try to find the actual directory and command
+      let serviceCwd = '.'
+      let command = `# fill in start command for ${name}`
+      
+      // Check build context for directory hint
+      const buildContext = svc.build?.context
+      if (buildContext) {
+        serviceCwd = buildContext.startsWith('./') ? buildContext : `./${buildContext}`
+        
+        // Try to read package.json from that directory
+        const pkgPath = join(cwd, buildContext, 'package.json')
+        const pkgRaw = await tryRead(pkgPath)
+        if (pkgRaw) {
+          try {
+            const pkg = JSON.parse(pkgRaw)
+            const scripts = pkg.scripts ?? {}
+            if (scripts.dev) {
+              command = `${runCmd} dev`
+            } else if (scripts.start) {
+              command = `${runCmd} start`
+            }
+          } catch { /* ignore */ }
+        }
+      }
+      
+      result.push({ name, command, basePort, cwd: serviceCwd })
+    }
+    
     return result.length > 0 ? result : null
   } catch { return null }
 }
@@ -187,30 +226,41 @@ export async function detectSetupCommands(cwd: string): Promise<SetupCommand[]> 
   const installCmd = pm === 'yarn' ? 'yarn install' : `${pm} install`
   const setup: SetupCommand[] = []
   
-  // Check root package.json
+  // Check root package.json (workspace root typically handles all installs)
   if (existsSync(join(cwd, 'package.json'))) {
     setup.push({ command: installCmd, cwd: '.' })
   }
   
-  // Check subdirectories with package.json (monorepo)
-  try {
-    const entries = await readdir(cwd, { withFileTypes: true })
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue
-      const subPkgPath = join(cwd, entry.name, 'package.json')
-      if (existsSync(subPkgPath)) {
+  // Common monorepo package directories
+  const packageDirs = ['packages', 'apps', 'services', '.']
+  
+  for (const packageDir of packageDirs) {
+    const scanDir = packageDir === '.' ? cwd : join(cwd, packageDir)
+    const prefix = packageDir === '.' ? './' : `./${packageDir}/`
+    
+    try {
+      const entries = await readdir(scanDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue
+        
+        const subdir = join(scanDir, entry.name)
+        const subPkgPath = join(subdir, 'package.json')
+        if (!existsSync(subPkgPath)) continue
+        
         // Check if this subdir has its own lock file (not using workspace)
-        const hasOwnLock = existsSync(join(cwd, entry.name, 'pnpm-lock.yaml')) ||
-                          existsSync(join(cwd, entry.name, 'package-lock.json')) ||
-                          existsSync(join(cwd, entry.name, 'yarn.lock'))
+        const hasOwnLock = existsSync(join(subdir, 'pnpm-lock.yaml')) ||
+                          existsSync(join(subdir, 'package-lock.json')) ||
+                          existsSync(join(subdir, 'yarn.lock')) ||
+                          existsSync(join(subdir, 'bun.lockb'))
+        
         if (hasOwnLock) {
-          const subPm = await detectPackageManager(join(cwd, entry.name))
+          const subPm = await detectPackageManager(subdir)
           const subInstall = subPm === 'yarn' ? 'yarn install' : `${subPm} install`
-          setup.push({ command: subInstall, cwd: `./${entry.name}` })
+          setup.push({ command: subInstall, cwd: `${prefix}${entry.name}` })
         }
       }
-    }
-  } catch { /* ignore */ }
+    } catch { /* directory doesn't exist, skip */ }
+  }
   
   return setup
 }
@@ -222,54 +272,62 @@ async function detectFromMonorepo(cwd: string): Promise<DetectedService[] | null
   const services: DetectedService[] = []
   let portCounter = 0
   
-  try {
-    const entries = await readdir(cwd, { withFileTypes: true })
+  // Common monorepo package directories
+  const packageDirs = ['packages', 'apps', 'services', '.']
+  
+  for (const packageDir of packageDirs) {
+    const scanDir = packageDir === '.' ? cwd : join(cwd, packageDir)
+    const prefix = packageDir === '.' ? './' : `./${packageDir}/`
     
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue
+    try {
+      const entries = await readdir(scanDir, { withFileTypes: true })
       
-      const pkgPath = join(cwd, entry.name, 'package.json')
-      const raw = await tryRead(pkgPath)
-      if (!raw) continue
-      
-      try {
-        const pkg = JSON.parse(raw)
-        const scripts = pkg.scripts ?? {}
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue
         
-        // Look for dev/start scripts
-        let command: string | null = null
-        if (scripts.dev) {
-          command = `${runCmd} dev`
-        } else if (scripts.start) {
-          command = `${runCmd} start`
-        }
+        const pkgPath = join(scanDir, entry.name, 'package.json')
+        const raw = await tryRead(pkgPath)
+        if (!raw) continue
         
-        if (command) {
-          // Guess port from scripts or use incrementing ports
-          let basePort = 3000 + (portCounter * 100)
+        try {
+          const pkg = JSON.parse(raw)
+          const scripts = pkg.scripts ?? {}
           
-          // Try to detect port from dev script
-          const devScript = scripts.dev ?? scripts.start ?? ''
-          const portMatch = devScript.match(/(?:--port|PORT=?|:)\s*(\d{4,5})/)
-          if (portMatch) {
-            basePort = parseInt(portMatch[1], 10)
-          } else if (entry.name.includes('front') || entry.name === 'web' || entry.name === 'app') {
-            basePort = 3000 + (portCounter * 100)
-          } else if (entry.name.includes('back') || entry.name === 'api' || entry.name === 'server') {
-            basePort = 8000 + (portCounter * 100)
+          // Look for dev/start scripts
+          let command: string | null = null
+          if (scripts.dev) {
+            command = `${runCmd} dev`
+          } else if (scripts.start) {
+            command = `${runCmd} start`
           }
           
-          services.push({
-            name: entry.name,
-            command,
-            basePort,
-            cwd: `./${entry.name}`,
-          })
-          portCounter++
-        }
-      } catch { /* ignore parse errors */ }
-    }
-  } catch { /* ignore */ }
+          if (command) {
+            // Guess port from scripts or use incrementing ports
+            let basePort = 3000 + (portCounter * 100)
+            
+            // Try to detect port from dev script
+            const devScript = scripts.dev ?? scripts.start ?? ''
+            const portMatch = devScript.match(/(?:--port|PORT=?|:)\s*(\d{4,5})/)
+            if (portMatch) {
+              basePort = parseInt(portMatch[1], 10)
+            } else if (entry.name.includes('front') || entry.name === 'web' || entry.name === 'app') {
+              basePort = 3000 + (portCounter * 100)
+            } else if (entry.name.includes('back') || entry.name === 'api' || entry.name === 'server') {
+              basePort = 8000 + (portCounter * 100)
+            }
+            
+            services.push({
+              name: entry.name,
+              command,
+              basePort,
+              cwd: `${prefix}${entry.name}`,
+            })
+            portCounter++
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    } catch { /* directory doesn't exist, skip */ }
+  }
   
   return services.length > 0 ? services : null
 }
