@@ -52,7 +52,7 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
       serviceId,
       service.command,
       cwd,
-      { [service.portEnvVar]: String(port), ...resolveEnv(service.env, ports) },
+      { [service.portEnvVar]: String(port), ...resolveEnv(service.env, ports, config.infrastructure) },
       logFile
     )
     console.log(chalk.green(`✓ ${service.name} → http://localhost:${port}`))

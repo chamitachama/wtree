@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import * as readline from 'readline'
 import chalk from 'chalk'
-import { detectServices } from '../detect.js'
+import { detectServices, detectInfrastructure } from '../detect.js'
 
 const TEMPLATE = `{
   // Default branch for new workspaces
@@ -68,12 +68,22 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
   }
 
   const services = await detectServices(cwd)
+  const infrastructure = await detectInfrastructure(cwd)
 
   if (services) {
+    // Build infrastructure connection strings map
+    const infraMap: Record<string, string> = {}
+    for (const infra of infrastructure) {
+      infraMap[infra.type] = infra.connectionString
+    }
+
     const config = {
       defaultBranch: 'main',
       workspacesDir: '.worktrees',
       portStep: 100,
+      envFiles: [],
+      infrastructure: infraMap,
+      setup: [],
       services: services.map(s => ({
         name: s.name,
         command: s.command,
@@ -84,8 +94,20 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
       })),
     }
     await writeFile(configPath, JSON.stringify(config, null, 2))
+
+    // Print detected services
     for (const s of services) {
-      console.log(chalk.green(`✓ Detected: ${s.name} (${s.command} → port ${s.basePort})`))
+      console.log(chalk.green(`✓ Detected service: ${s.name} (${s.command} → port ${s.basePort})`))
+    }
+
+    // Print detected infrastructure with hints
+    if (infrastructure.length > 0) {
+      console.log(chalk.blue('\n📦 Detected infrastructure services:'))
+      for (const infra of infrastructure) {
+        console.log(chalk.cyan(`  • ${infra.name} (${infra.type}) → localhost:${infra.hostPort}`))
+      }
+      console.log(chalk.yellow('\n💡 Tip: Use {infrastructure.<type>} in service env vars:'))
+      console.log(chalk.gray('   "env": { "DATABASE_URL": "{infrastructure.mongodb}" }'))
     }
   } else {
     await writeFile(configPath, TEMPLATE)
