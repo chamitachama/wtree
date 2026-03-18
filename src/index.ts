@@ -29,8 +29,8 @@ program.command('stop <name>').description('Stop a workspace (keeps worktree)').
 program.command('destroy <name>').description('Stop and delete a workspace (requires typing DELETE)').action(destroyCommand)
 program.command('init').description('Set up wtree in the current project').action(() => initCommand())
 
-program.command('browser <name>').description('Open workspace frontend in browser').action(browserCommand)
-program.command('logs <name>').description('Tail logs for a workspace service').action(logsCommand)
-program.command('claude <name>').description('Launch Claude Code in workspace with context').action(claudeCommand)
+program.command('browser <name>').description('Open workspace frontend in browser').action((name) => browserCommand(name))
+program.command('logs <name>').description('Tail logs for a workspace service').action((name) => logsCommand(name))
+program.command('claude <name>').description('Launch Claude Code in workspace with context').action((name) => claudeCommand(name))
 
 program.parse()
