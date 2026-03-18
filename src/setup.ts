@@ -46,6 +46,44 @@ export interface SetupOptions {
   continueOnError?: boolean
 }
 
+async function runCommand(command: string, cwd: string): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const proc = spawn(command, {
+      cwd,
+      shell: true,
+      stdio: 'inherit',
+    })
+
+    proc.on('error', (err) => {
+      console.error(chalk.red(`  ✗ Error: ${err.message}`))
+      resolve(1)
+    })
+    proc.on('close', (code) => resolve(code ?? 0))
+  })
+}
+
+// Check if command is a package install command
+function isInstallCommand(cmd: string): { isInstall: boolean; pm: string | null } {
+  const match = cmd.match(/^(pnpm|npm|yarn|bun)\s+(install|i|add)(\s|$)/)
+  if (match) return { isInstall: true, pm: match[1] }
+  return { isInstall: false, pm: null }
+}
+
+// Get retry command with --ignore-scripts
+function getRetryCommand(cmd: string, pm: string): string {
+  // Already has --ignore-scripts? Don't retry
+  if (cmd.includes('--ignore-scripts')) return ''
+  
+  if (pm === 'pnpm' || pm === 'npm') {
+    return `${cmd} --ignore-scripts`
+  } else if (pm === 'yarn') {
+    return `${cmd} --ignore-scripts`
+  } else if (pm === 'bun') {
+    return `${cmd} --ignore-lifecycle`
+  }
+  return ''
+}
+
 export async function runSetup(
   commands: SetupCommand[],
   worktreePath: string,
@@ -60,19 +98,20 @@ export async function runSetup(
     const cwd = join(worktreePath, cmd.cwd.replace(/^\.\//, ''))
     console.log(chalk.gray(`  → ${cmd.command} (in ${cmd.cwd})`))
 
-    const exitCode = await new Promise<number>((resolve, reject) => {
-      const proc = spawn(cmd.command, {
-        cwd,
-        shell: true,
-        stdio: 'inherit',
-      })
+    let exitCode = await runCommand(cmd.command, cwd)
 
-      proc.on('error', (err) => {
-        console.error(chalk.red(`  ✗ Error: ${err.message}`))
-        resolve(1)
-      })
-      proc.on('close', (code) => resolve(code ?? 0))
-    })
+    // If install failed, retry with --ignore-scripts
+    if (exitCode !== 0) {
+      const { isInstall, pm } = isInstallCommand(cmd.command)
+      if (isInstall && pm) {
+        const retryCmd = getRetryCommand(cmd.command, pm)
+        if (retryCmd) {
+          console.log(chalk.yellow(`  ⚠ Install failed, retrying with --ignore-scripts...`))
+          console.log(chalk.gray(`  → ${retryCmd}`))
+          exitCode = await runCommand(retryCmd, cwd)
+        }
+      }
+    }
 
     if (exitCode !== 0) {
       failed.push(cmd.command)
