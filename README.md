@@ -8,6 +8,16 @@ Run multiple git worktrees in parallel, each with its own full-stack environment
 npm install -g wtree
 ```
 
+## Quick Start
+
+```bash
+wtree init                    # detect services + write .wtree.json
+wtree open feature/my-branch  # start workspace with isolated ports
+wtree list                    # see all workspaces
+wtree stop my-branch          # stop processes, keep worktree
+wtree destroy my-branch       # stop + delete worktree
+```
+
 ## Setup
 
 In your project root:
@@ -16,17 +26,41 @@ In your project root:
 wtree init
 ```
 
-Auto-detects services from Procfile, docker-compose, or package.json and writes `.wtree.json`. If nothing is detected, a commented template is written for you to fill in.
+Auto-detects services from `docker-compose.yml`, `Procfile`, or `package.json` and writes `.wtree.json`.
 
-### Manual config
+### What gets detected
+
+- **App services** — ports, names, base commands
+- **Infrastructure** — MongoDB, Redis, Postgres with host-mapped ports
+- **Connection strings** — auto-generated for detected infra
+
+## Configuration
+
+### Full example
 
 ```json5
 {
-  // Default branch for new workspaces
   "defaultBranch": "main",
-
-  // Port offset between workspaces (slot 1 = basePort+100, slot 2 = basePort+200)
+  "workspacesDir": ".worktrees",
   "portStep": 100,
+
+  // Copy .env files from main repo into each new worktree
+  "envFiles": [
+    "./backend/.env",
+    "./frontend/.env"
+  ],
+
+  // Auto-detected from docker-compose (or configure manually)
+  "infrastructure": {
+    "mongodb": "mongodb://localhost:27018",
+    "redis": "redis://localhost:6380"
+  },
+
+  // Run once when worktree is first created
+  "setup": [
+    { "command": "pnpm install --frozen-lockfile", "cwd": "." },
+    { "command": "poetry install", "cwd": "./backend" }
+  ],
 
   "services": [
     {
@@ -44,48 +78,151 @@ Auto-detects services from Procfile, docker-compose, or package.json and writes 
       "command": "uvicorn src.main:app --reload",
       "cwd": "./backend",
       "basePort": 8000,
-      "portEnvVar": "PORT"
+      "portEnvVar": "PORT",
+      "env": {
+        "DATABASE_URL": "{infrastructure.mongodb}",
+        "REDIS_URL": "{infrastructure.redis}"
+      }
     }
   ]
 }
 ```
 
-Use `{service.port}` in env values to reference another service's assigned port.
+### Template variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{service.port}` | Another service's assigned port | `http://localhost:{backend.port}` |
+| `{infrastructure.<type>}` | Infrastructure connection string | `{infrastructure.mongodb}` |
+
+### Port allocation
+
+Each workspace gets a slot (1, 2, 3...). Actual port = `basePort + (slot × portStep)`.
+
+| Workspace | Slot | frontend | backend |
+|-----------|------|----------|---------|
+| feature-a | 1    | 3100     | 8100    |
+| feature-b | 2    | 3200     | 8200    |
 
 ## Commands
 
+### Workspace management
+
 ```bash
-wtree init                         # detect services + write .wtree.json
-wtree open <branch>                # open an existing branch as a workspace
-wtree create <name>                # create new branch + workspace
-wtree create <name> --from <base>  # branch off a specific base
-wtree list                         # see all workspaces + ports
-wtree stop <name>                  # stop processes, keep worktree
-wtree destroy <name>               # stop + delete (requires typing DELETE)
+wtree init                         # Detect services, write .wtree.json
+wtree open <branch>                # Open existing branch as workspace
+wtree open <branch> --skip-setup   # Skip setup commands (deps already installed)
+wtree create <name>                # Create new branch + workspace
+wtree create <name> --from <base>  # Branch off a specific base
+wtree create <name> --skip-setup   # Skip setup commands
+wtree list                         # Show all workspaces + ports
+wtree stop <name>                  # Stop processes, keep worktree
+wtree destroy <name>               # Stop + delete (requires typing DELETE)
 ```
 
-## Example
+### Utilities
 
 ```bash
-# Terminal 1 — in your project root:
-wtree open my-branch-1
+wtree browser <name>    # Open workspace frontend in browser
+wtree logs <name>       # Tail logs for a workspace
+wtree claude <name>     # Launch Claude Code in workspace context
+```
+
+## Features
+
+### 🔐 Environment files
+
+Copy `.env` files from your main repo into each worktree automatically:
+
+```json5
+"envFiles": ["./backend/.env", "./frontend/.env"]
+```
+
+- Copies on first `open` or `create`
+- Skips if file doesn't exist in main repo (warning)
+- Never overwrites existing `.env` in worktree
+
+### 📦 Setup commands
+
+Run install/build commands when a worktree is first created:
+
+```json5
+"setup": [
+  { "command": "pnpm install", "cwd": "." },
+  { "command": "poetry install", "cwd": "./backend" }
+]
+```
+
+- Runs sequentially (order matters)
+- Creates `.wtree-setup-done` marker to avoid re-running
+- Use `--skip-setup` to bypass
+
+### 🐳 Infrastructure detection
+
+`wtree init` parses `docker-compose.yml` to find infrastructure services:
+
+```
+📦 Detected infrastructure services:
+  • mongodb (mongodb) → localhost:27018
+  • redis (redis) → localhost:6380
+
+💡 Tip: Use {infrastructure.<type>} in service env vars
+```
+
+Supported: MongoDB, Redis, PostgreSQL, MySQL, RabbitMQ
+
+### ♻️ Workspace reuse
+
+When you `stop` a workspace and later `open` it again, wtree reuses the same slot and ports instead of creating duplicates.
+
+## Example workflow
+
+```bash
+# Setup (once)
+wtree init
+# Edit .wtree.json to configure services
+
+# Daily workflow
+wtree open feat/LON-123-new-feature
+# 🔐 Copying .env files...
+#   ✓ ./backend/.env
+# 📦 Running setup commands...
+#   → pnpm install (in .)
 # ✓ frontend → http://localhost:3100
 # ✓ backend  → http://localhost:8100
 
-# Terminal 2:
-wtree open my-branch-2
+# Work on another feature in parallel
+wtree open feat/LON-456-hotfix
 # ✓ frontend → http://localhost:3200
 # ✓ backend  → http://localhost:8200
 
+# Check status
 wtree list
-# ● my-branch-1  frontend:3100  backend:8100
-# ● my-branch-2  frontend:3200  backend:8200
+# ● feat-LON-123-new-feature  frontend:3100  backend:8100
+# ● feat-LON-456-hotfix       frontend:3200  backend:8200
 
-cat .wtree/STATUS.md
-# Full status with commits and conflict warnings
-
-# Cleanup:
-wtree destroy my-branch-1
+# Done with a feature
+wtree destroy feat-LON-123-new-feature
 # ⚠️  Type DELETE to confirm: DELETE
-# Destroyed workspace: my-branch-1
+# Destroyed workspace
 ```
+
+## Files
+
+| Path | Description |
+|------|-------------|
+| `.wtree.json` | Configuration file |
+| `.wtree/state.json` | Active workspaces state |
+| `.wtree/logs/` | Service log files |
+| `.wtree/STATUS.md` | Human-readable status doc |
+| `.worktrees/` | Git worktree directories |
+
+Add to `.gitignore`:
+```
+.worktrees/
+.wtree/state.json
+```
+
+## License
+
+MIT
