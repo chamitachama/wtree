@@ -14,10 +14,16 @@ export async function openCommand(branch: string): Promise<void> {
   const state = new StateManager(root)
   const wm = new WorktreeManager(root, `${root}/${config.workspacesDir}`)
 
-  const slot = await state.nextSlot()
-  const ports = await assignPorts(config.services, await state.usedPorts(), slot, config.portStep)
+  const name = branch.replace(/\//g, '-')
+  const existing = await state.get(name)
 
-  console.log(chalk.blue(`Opening workspace: ${branch}`))
+  // Reuse slot/ports from stopped workspace, or assign new ones
+  const slot = existing?.status === 'stopped' ? existing.slot : await state.nextSlot()
+  const ports = existing?.status === 'stopped' 
+    ? existing.ports 
+    : await assignPorts(config.services, await state.usedPorts(), slot, config.portStep)
+
+  console.log(chalk.blue(`${existing?.status === 'stopped' ? 'Restarting' : 'Opening'} workspace: ${branch}`))
   const worktreePath = await wm.open(branch)
 
   const pids: Record<string, number> = {}
@@ -36,7 +42,10 @@ export async function openCommand(branch: string): Promise<void> {
     console.log(chalk.green(`✓ ${service.name} → http://localhost:${port}`))
   }
 
-  const name = branch.replace(/\//g, '-')
-  await state.add({ name, branch, path: worktreePath, baseBranch: config.defaultBranch, ports, pids, status: 'running', slot })
+  if (existing?.status === 'stopped') {
+    await state.update(name, { pids, status: 'running' })
+  } else {
+    await state.add({ name, branch, path: worktreePath, baseBranch: config.defaultBranch, ports, pids, status: 'running', slot })
+  }
   await writeStatusDoc(root, state, wm)
 }
