@@ -145,12 +145,20 @@ wtree claude <name>     # Launch Claude Code in workspace context
 Copy `.env` files from your main repo into each worktree automatically:
 
 ```json5
+// Simple format
 "envFiles": ["./backend/.env", "./frontend/.env"]
+
+// With required vars verification
+"envFiles": [
+  { "path": "./backend/.env", "required": ["DATABASE_URL", "REDIS_URL"] },
+  { "path": "./frontend/.env", "required": ["NEXT_PUBLIC_API_URL"] }
+]
 ```
 
 - Copies on first `open` or `create`
 - Skips if file doesn't exist in main repo (warning)
 - Never overwrites existing `.env` in worktree
+- Warns if required vars are missing
 
 ### 📦 Setup commands
 
