@@ -23,36 +23,44 @@ export class WorktreeManager {
     const path = join(this.worktreesDir, this.safeName(branch))
     const existing = await this.list()
     const isRegistered = existing.some(w => w.path === path)
+    const dirExists = await this.pathExists(path)
     
-    if (!isRegistered) {
-      // Check if directory exists but isn't registered (orphaned from failed attempt)
-      const dirExists = await this.pathExists(path)
-      if (dirExists) {
-        // Clean up orphaned directory
-        await rm(path, { recursive: true, force: true })
-        // Also prune any stale worktree references
-        await this.git.raw(['worktree', 'prune']).catch(() => {})
-      }
-
-      // Check if branch exists locally or in remote
-      const branchExists = await this.branchExists(branch)
-      if (!branchExists) {
-        // Try fetching from origin first
-        try {
-          await this.git.fetch('origin', branch)
-        } catch {
-          // Fetch failed, branch doesn't exist anywhere
-          const suggestions = await this.findSimilarBranches(branch)
-          let msg = `Branch '${branch}' not found locally or in remote.`
-          if (suggestions.length > 0) {
-            msg += `\n\nDid you mean?\n${suggestions.map(s => `  • ${s}`).join('\n')}`
-          }
-          msg += `\n\nTip: Use 'wtree create ${branch}' to create a new branch.`
-          throw new Error(msg)
-        }
-      }
-      await this.git.raw(['worktree', 'add', path, branch])
+    // Handle various states
+    if (isRegistered && dirExists) {
+      // Already good, reuse existing worktree
+      return path
     }
+    
+    if (isRegistered && !dirExists) {
+      // Registered but directory missing - prune and recreate
+      await this.git.raw(['worktree', 'prune']).catch(() => {})
+    }
+    
+    if (!isRegistered && dirExists) {
+      // Directory exists but not registered - clean up orphan
+      await rm(path, { recursive: true, force: true })
+    }
+
+    // At this point, we need to create the worktree
+    // Check if branch exists locally or in remote
+    const branchExists = await this.branchExists(branch)
+    if (!branchExists) {
+      // Try fetching from origin first
+      try {
+        await this.git.fetch('origin', branch)
+      } catch {
+        // Fetch failed, branch doesn't exist anywhere
+        const suggestions = await this.findSimilarBranches(branch)
+        let msg = `Branch '${branch}' not found locally or in remote.`
+        if (suggestions.length > 0) {
+          msg += `\n\nDid you mean?\n${suggestions.map(s => `  • ${s}`).join('\n')}`
+        }
+        msg += `\n\nTip: Use 'wtree create ${branch}' to create a new branch.`
+        throw new Error(msg)
+      }
+    }
+    
+    await this.git.raw(['worktree', 'add', path, branch])
     return path
   }
 
