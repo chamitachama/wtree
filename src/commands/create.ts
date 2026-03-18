@@ -10,7 +10,7 @@ import { sortByDependencies, waitForHealthy } from '../health.js'
 
 const pm = new ProcessManager()
 
-export async function createCommand(name: string, options: { from?: string; skipSetup?: boolean }): Promise<void> {
+export async function createCommand(name: string, options: { from?: string; skipSetup?: boolean; continueOnError?: boolean }): Promise<void> {
   const root = process.cwd()
   const config = await loadConfig(root)
   const baseBranch = options.from ?? config.defaultBranch
@@ -68,7 +68,9 @@ export async function createCommand(name: string, options: { from?: string; skip
   if (!options.skipSetup) {
     await copyEnvFiles(config.envFiles, root, worktreePath)
     if (config.setup.length > 0) {
-      await runSetup(config.setup, worktreePath)
+      await runSetup(config.setup, worktreePath, {
+        continueOnError: options.continueOnError ?? true
+      })
     }
   }
 

@@ -25,12 +25,21 @@ program
 program.command('open <branch>')
   .description('Open an existing branch as a workspace')
   .option('--skip-setup', 'Skip running setup commands')
-  .action((branch, opts) => openCommand(branch, { skipSetup: opts.skipSetup }))
+  .option('--strict', 'Fail if setup commands fail (default: continue with warning)')
+  .action((branch, opts) => openCommand(branch, { 
+    skipSetup: opts.skipSetup,
+    continueOnError: !opts.strict
+  }))
 program.command('create <name>')
   .description('Create a new branch and workspace')
   .option('--from <branch>', 'Base branch')
   .option('--skip-setup', 'Skip running setup commands')
-  .action(createCommand)
+  .option('--strict', 'Fail if setup commands fail (default: continue with warning)')
+  .action((name, opts) => createCommand(name, {
+    from: opts.from,
+    skipSetup: opts.skipSetup,
+    continueOnError: !opts.strict
+  }))
 program.command('list').description('Show all workspaces').action(() => listCommand())
 program.command('stop <name>').description('Stop a workspace (keeps worktree)').action(stopCommand)
 program.command('destroy <name>').description('Stop and delete a workspace (requires typing DELETE)').action(destroyCommand)

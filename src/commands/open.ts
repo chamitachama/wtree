@@ -13,6 +13,7 @@ const pm = new ProcessManager()
 
 export interface OpenOptions {
   skipSetup?: boolean
+  continueOnError?: boolean  // Continue even if setup fails
 }
 
 async function resolvePrBranch(input: string): Promise<string> {
@@ -112,7 +113,9 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
     if (!setupDone) {
       await copyEnvFiles(config.envFiles, root, worktreePath)
       if (config.setup.length > 0) {
-        await runSetup(config.setup, worktreePath)
+        await runSetup(config.setup, worktreePath, { 
+          continueOnError: options.continueOnError ?? true  // Default: continue on error
+        })
       }
     }
   }

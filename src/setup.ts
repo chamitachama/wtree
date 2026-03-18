@@ -42,13 +42,19 @@ export async function markSetupDone(worktreePath: string): Promise<void> {
   await writeFile(join(worktreePath, SETUP_MARKER), new Date().toISOString())
 }
 
+export interface SetupOptions {
+  continueOnError?: boolean
+}
+
 export async function runSetup(
   commands: SetupCommand[],
-  worktreePath: string
-): Promise<void> {
-  if (commands.length === 0) return
+  worktreePath: string,
+  options: SetupOptions = {}
+): Promise<{ success: boolean; failed: string[] }> {
+  if (commands.length === 0) return { success: true, failed: [] }
 
   console.log(chalk.blue('\n📦 Running setup commands...'))
+  const failed: string[] = []
 
   for (const cmd of commands) {
     const cwd = join(worktreePath, cmd.cwd.replace(/^\.\//, ''))
@@ -61,17 +67,36 @@ export async function runSetup(
         stdio: 'inherit',
       })
 
-      proc.on('error', reject)
+      proc.on('error', (err) => {
+        console.error(chalk.red(`  ✗ Error: ${err.message}`))
+        resolve(1)
+      })
       proc.on('close', (code) => resolve(code ?? 0))
     })
 
     if (exitCode !== 0) {
-      throw new Error(`Setup command failed with exit code ${exitCode}: ${cmd.command}`)
+      failed.push(cmd.command)
+      if (options.continueOnError) {
+        console.log(chalk.yellow(`  ⚠ Setup command failed (exit ${exitCode}), continuing...`))
+      } else {
+        throw new Error(`Setup command failed with exit code ${exitCode}: ${cmd.command}`)
+      }
     }
   }
 
-  await markSetupDone(worktreePath)
-  console.log(chalk.green('✓ Setup complete\n'))
+  if (failed.length === 0) {
+    await markSetupDone(worktreePath)
+    console.log(chalk.green('✓ Setup complete\n'))
+  } else {
+    console.log(chalk.yellow(`\n⚠ Setup completed with ${failed.length} error(s)`))
+    console.log(chalk.gray('  Run manually if needed:\n'))
+    for (const cmd of failed) {
+      console.log(chalk.gray(`    ${cmd}`))
+    }
+    console.log('')
+  }
+
+  return { success: failed.length === 0, failed }
 }
 
 function parseEnvFile(content: string): Record<string, string> {
