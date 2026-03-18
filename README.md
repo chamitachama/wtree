@@ -56,7 +56,7 @@ Auto-detects services from `docker-compose.yml`, `Procfile`, or `package.json` a
 
   // Copy .env files from main repo into each new worktree
   "envFiles": [
-    "./backend/.env",
+    { "path": "./backend/.env", "required": ["DATABASE_URL"] },
     "./frontend/.env"
   ],
 
@@ -74,24 +74,26 @@ Auto-detects services from `docker-compose.yml`, `Procfile`, or `package.json` a
 
   "services": [
     {
-      "name": "frontend",
-      "command": "pnpm dev",
-      "cwd": "./frontend",
-      "basePort": 3000,
-      "portEnvVar": "PORT",
-      "env": {
-        "NEXT_PUBLIC_API_URL": "http://localhost:{backend.port}"
-      }
-    },
-    {
       "name": "backend",
       "command": "uvicorn src.main:app --reload",
       "cwd": "./backend",
       "basePort": 8000,
       "portEnvVar": "PORT",
+      "shared": true,  // Single instance for all worktrees
       "env": {
         "DATABASE_URL": "{infrastructure.mongodb}",
         "REDIS_URL": "{infrastructure.redis}"
+      }
+    },
+    {
+      "name": "frontend",
+      "command": "pnpm dev",
+      "cwd": "./frontend",
+      "basePort": 3000,
+      "portEnvVar": "PORT",
+      "shared": false,  // One per worktree (default)
+      "env": {
+        "NEXT_PUBLIC_API_URL": "http://localhost:{backend.port}"
       }
     }
   ]
@@ -215,31 +217,42 @@ When you `stop` a workspace and later `open` it again, wtree reuses the same slo
 ```bash
 # Setup (once)
 wtree init
-# Edit .wtree.json to configure services
+# 📋 Detected services:
+#   • backend (port 8000)
+#   • frontend (port 3000)
+# 
+# Share backend across all worktrees? (y/N) y
+# Share frontend across all worktrees? (y/N) n
+#
+# ✓ backend → port 8000 [shared]
+# ✓ frontend → port 3000
+# ✓ Wrote .wtree.json
 
 # Daily workflow
 wtree open feat/LON-123-new-feature
 # 🔐 Copying .env files...
 #   ✓ ./backend/.env
+#     ✓ All required vars present (1)
 # 📦 Running setup commands...
 #   → pnpm install (in .)
+# ✓ backend → http://localhost:8000 (shared)
 # ✓ frontend → http://localhost:3100
-# ✓ backend  → http://localhost:8100
 
 # Work on another feature in parallel
 wtree open feat/LON-456-hotfix
+# ↳ backend → http://localhost:8000 (shared, already running)
 # ✓ frontend → http://localhost:3200
-# ✓ backend  → http://localhost:8200
 
 # Check status
 wtree list
-# ● feat-LON-123-new-feature  frontend:3100  backend:8100
-# ● feat-LON-456-hotfix       frontend:3200  backend:8200
+# ● feat-LON-123-new-feature  frontend:3100
+# ● feat-LON-456-hotfix       frontend:3200
+# ◆ backend (shared)          :8000
 
 # Done with a feature
 wtree destroy feat-LON-123-new-feature
 # ⚠️  Type DELETE to confirm: DELETE
-# Destroyed workspace
+# Destroyed workspace (shared services kept running)
 ```
 
 ## Files
