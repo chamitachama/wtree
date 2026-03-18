@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import * as readline from 'readline'
 import chalk from 'chalk'
-import { detectServices, detectInfrastructure } from '../detect.js'
+import { detectServices, detectInfrastructure, detectSetupCommands, detectPackageManager } from '../detect.js'
 
 const TEMPLATE = `{
   // Default branch for new workspaces
@@ -94,17 +94,29 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
       }
     }
 
+    // Auto-detect setup commands
+    const setupCommands = await detectSetupCommands(cwd)
+    const pm = await detectPackageManager(cwd)
+    
+    if (setupCommands.length > 0) {
+      console.log(chalk.blue(`\n📦 Detected package manager: ${pm}`))
+      console.log(chalk.cyan('  Setup commands:'))
+      for (const cmd of setupCommands) {
+        console.log(chalk.gray(`    • ${cmd.command} (in ${cmd.cwd})`))
+      }
+    }
+
     const config = {
       defaultBranch: 'main',
       workspacesDir: '.worktrees',
       portStep: 100,
       envFiles: [],
       infrastructure: infraMap,
-      setup: [],
+      setup: setupCommands,
       services: services.map(s => ({
         name: s.name,
         command: s.command,
-        cwd: '.',
+        cwd: s.cwd ?? '.',
         basePort: s.basePort,
         portEnvVar: 'PORT',
         env: {},

@@ -1,11 +1,13 @@
-import { readFile } from 'fs/promises'
+import { readFile, readdir } from 'fs/promises'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import yaml from 'js-yaml'
 
 export interface DetectedService {
   name: string
   command: string
   basePort: number
+  cwd?: string  // optional, defaults to '.'
 }
 
 export interface DetectedInfrastructure {
@@ -144,7 +146,132 @@ export async function detectServices(cwd: string): Promise<DetectedService[] | n
   return (
     await detectFromProcfile(cwd) ??
     await detectFromDockerCompose(cwd) ??
+    await detectFromMonorepo(cwd) ??
     await detectFromPackageJson(cwd) ??
     await detectFromPython(cwd)
   )
 }
+
+// Detect package manager from lock files
+export type PackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun'
+
+export async function detectPackageManager(cwd: string): Promise<PackageManager> {
+  if (existsSync(join(cwd, 'pnpm-lock.yaml'))) return 'pnpm'
+  if (existsSync(join(cwd, 'bun.lockb'))) return 'bun'
+  if (existsSync(join(cwd, 'yarn.lock'))) return 'yarn'
+  if (existsSync(join(cwd, 'package-lock.json'))) return 'npm'
+  
+  // Check subdirectories too
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      const subdir = join(cwd, entry.name)
+      if (existsSync(join(subdir, 'pnpm-lock.yaml'))) return 'pnpm'
+      if (existsSync(join(subdir, 'bun.lockb'))) return 'bun'
+      if (existsSync(join(subdir, 'yarn.lock'))) return 'yarn'
+      if (existsSync(join(subdir, 'package-lock.json'))) return 'npm'
+    }
+  } catch { /* ignore */ }
+  
+  return 'npm' // default
+}
+
+export interface SetupCommand {
+  command: string
+  cwd: string
+}
+
+export async function detectSetupCommands(cwd: string): Promise<SetupCommand[]> {
+  const pm = await detectPackageManager(cwd)
+  const installCmd = pm === 'yarn' ? 'yarn install' : `${pm} install`
+  const setup: SetupCommand[] = []
+  
+  // Check root package.json
+  if (existsSync(join(cwd, 'package.json'))) {
+    setup.push({ command: installCmd, cwd: '.' })
+  }
+  
+  // Check subdirectories with package.json (monorepo)
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue
+      const subPkgPath = join(cwd, entry.name, 'package.json')
+      if (existsSync(subPkgPath)) {
+        // Check if this subdir has its own lock file (not using workspace)
+        const hasOwnLock = existsSync(join(cwd, entry.name, 'pnpm-lock.yaml')) ||
+                          existsSync(join(cwd, entry.name, 'package-lock.json')) ||
+                          existsSync(join(cwd, entry.name, 'yarn.lock'))
+        if (hasOwnLock) {
+          const subPm = await detectPackageManager(join(cwd, entry.name))
+          const subInstall = subPm === 'yarn' ? 'yarn install' : `${subPm} install`
+          setup.push({ command: subInstall, cwd: `./${entry.name}` })
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  
+  return setup
+}
+
+// Scan subdirectories for services (monorepo detection)
+async function detectFromMonorepo(cwd: string): Promise<DetectedService[] | null> {
+  const pm = await detectPackageManager(cwd)
+  const runCmd = pm === 'yarn' ? 'yarn' : pm === 'bun' ? 'bun run' : `${pm} run`
+  const services: DetectedService[] = []
+  let portCounter = 0
+  
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true })
+    
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue
+      
+      const pkgPath = join(cwd, entry.name, 'package.json')
+      const raw = await tryRead(pkgPath)
+      if (!raw) continue
+      
+      try {
+        const pkg = JSON.parse(raw)
+        const scripts = pkg.scripts ?? {}
+        
+        // Look for dev/start scripts
+        let command: string | null = null
+        if (scripts.dev) {
+          command = `${runCmd} dev`
+        } else if (scripts.start) {
+          command = `${runCmd} start`
+        }
+        
+        if (command) {
+          // Guess port from scripts or use incrementing ports
+          let basePort = 3000 + (portCounter * 100)
+          
+          // Try to detect port from dev script
+          const devScript = scripts.dev ?? scripts.start ?? ''
+          const portMatch = devScript.match(/(?:--port|PORT=?|:)\s*(\d{4,5})/)
+          if (portMatch) {
+            basePort = parseInt(portMatch[1], 10)
+          } else if (entry.name.includes('front') || entry.name === 'web' || entry.name === 'app') {
+            basePort = 3000 + (portCounter * 100)
+          } else if (entry.name.includes('back') || entry.name === 'api' || entry.name === 'server') {
+            basePort = 8000 + (portCounter * 100)
+          }
+          
+          services.push({
+            name: entry.name,
+            command,
+            basePort,
+            cwd: `./${entry.name}`,
+          })
+          portCounter++
+        }
+      } catch { /* ignore parse errors */ }
+    }
+  } catch { /* ignore */ }
+  
+  return services.length > 0 ? services : null
+}
+
+// End of detect.ts
