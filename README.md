@@ -1,5 +1,9 @@
 # wtree
 
+[![npm version](https://img.shields.io/npm/v/@chamitachama/wtree)](https://www.npmjs.com/package/@chamitachama/wtree)
+[![npm downloads](https://img.shields.io/npm/dm/@chamitachama/wtree)](https://www.npmjs.com/package/@chamitachama/wtree)
+[![license](https://img.shields.io/npm/l/@chamitachama/wtree)](https://github.com/chamitachama/wtree/blob/main/LICENSE)
+
 Run multiple git worktrees in parallel, each with its own full-stack environment on isolated ports.
 
 ## Install
