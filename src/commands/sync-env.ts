@@ -5,7 +5,11 @@ import { loadConfig } from '../config.js'
 import { StateManager } from '../state.js'
 import { syncEnvFile } from '../setup.js'
 
-export async function syncEnvCommand(name: string): Promise<void> {
+export interface SyncEnvOptions {
+  force?: boolean
+}
+
+export async function syncEnvCommand(name: string, options: SyncEnvOptions = {}): Promise<void> {
   const root = process.cwd()
   const config = await loadConfig(root)
   const state = new StateManager(root)
@@ -21,9 +25,11 @@ export async function syncEnvCommand(name: string): Promise<void> {
     return
   }
 
-  console.log(chalk.blue(`\n🔄 Syncing env files for ${name}...`))
+  const forceLabel = options.force ? ' (force mode)' : ''
+  console.log(chalk.blue(`\n🔄 Syncing env files for ${name}${forceLabel}...`))
 
-  let totalSynced = 0
+  let totalAdded = 0
+  let totalUpdated = 0
 
   for (const envFileConfig of config.envFiles) {
     const relativePath = envFileConfig.path.replace(/^\.\//, '')
@@ -46,17 +52,32 @@ export async function syncEnvCommand(name: string): Promise<void> {
       continue
     }
 
-    const synced = await syncEnvFile(sourcePath, destPath, envFileConfig.path)
-    if (synced > 0) {
-      console.log(chalk.cyan(`  ↻ ${envFileConfig.path} (+${synced} vars)`))
-      totalSynced += synced
+    const result = await syncEnvFile(sourcePath, destPath, envFileConfig.path, options.force ?? false)
+    
+    const parts: string[] = []
+    if (result.added > 0) parts.push(`+${result.added} new`)
+    if (result.updated > 0) parts.push(`${result.updated} updated`)
+    
+    if (parts.length > 0) {
+      console.log(chalk.cyan(`  ↻ ${envFileConfig.path} (${parts.join(', ')})`))
     } else {
       console.log(chalk.gray(`  ✓ ${envFileConfig.path} (up to date)`))
     }
+    
+    // Warn about differing values (only if not force)
+    for (const key of result.differing) {
+      console.log(chalk.yellow(`    ⚠ ${key} differs from base`))
+    }
+    
+    totalAdded += result.added
+    totalUpdated += result.updated
   }
 
-  if (totalSynced > 0) {
-    console.log(chalk.green(`\n✓ Synced ${totalSynced} new env vars`))
+  if (totalAdded > 0 || totalUpdated > 0) {
+    const summary: string[] = []
+    if (totalAdded > 0) summary.push(`${totalAdded} added`)
+    if (totalUpdated > 0) summary.push(`${totalUpdated} updated`)
+    console.log(chalk.green(`\n✓ ${summary.join(', ')}`))
   } else {
     console.log(chalk.gray('\n✓ All env files up to date'))
   }

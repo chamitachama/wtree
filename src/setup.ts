@@ -88,12 +88,19 @@ async function verifyRequiredVars(
   }
 }
 
+export interface SyncResult {
+  added: number
+  updated: number
+  differing: string[]
+}
+
 export async function syncEnvFile(
   sourcePath: string,
   destPath: string,
-  envFile: string
-): Promise<number> {
-  const { readFile, appendFile } = await import('fs/promises')
+  envFile: string,
+  force: boolean = false
+): Promise<SyncResult> {
+  const { readFile, writeFile, appendFile } = await import('fs/promises')
   
   const sourceContent = await readFile(sourcePath, 'utf-8')
   const destContent = await readFile(destPath, 'utf-8')
@@ -103,21 +110,42 @@ export async function syncEnvFile(
   
   // Find vars in source that are missing in dest
   const missingVars: Record<string, string> = {}
+  const differingVars: string[] = []
+  const updatedVars: Record<string, string> = {}
+  
   for (const [key, value] of Object.entries(sourceVars)) {
     if (!(key in destVars)) {
       missingVars[key] = value
+    } else if (destVars[key] !== value) {
+      differingVars.push(key)
+      if (force) {
+        updatedVars[key] = value
+      }
     }
   }
   
-  if (Object.keys(missingVars).length === 0) {
-    return 0
+  // Append missing vars
+  if (Object.keys(missingVars).length > 0) {
+    const toAppend = '\n# Synced from base\n' + serializeEnvVars(missingVars) + '\n'
+    await appendFile(destPath, toAppend)
   }
   
-  // Append missing vars to dest
-  const toAppend = '\n# Synced from base\n' + serializeEnvVars(missingVars) + '\n'
-  await appendFile(destPath, toAppend)
+  // Update differing vars if force
+  if (force && Object.keys(updatedVars).length > 0) {
+    let newContent = destContent
+    for (const [key, value] of Object.entries(updatedVars)) {
+      // Replace existing line
+      const regex = new RegExp(`^${key}=.*$`, 'm')
+      newContent = newContent.replace(regex, `${key}=${value}`)
+    }
+    await writeFile(destPath, newContent)
+  }
   
-  return Object.keys(missingVars).length
+  return {
+    added: Object.keys(missingVars).length,
+    updated: force ? Object.keys(updatedVars).length : 0,
+    differing: force ? [] : differingVars
+  }
 }
 
 export async function copyEnvFiles(
@@ -153,11 +181,15 @@ export async function copyEnvFiles(
 
     if (alreadyExists) {
       // Sync missing vars from base to worktree
-      const synced = await syncEnvFile(sourcePath, destPath, envFileConfig.path)
-      if (synced > 0) {
-        console.log(chalk.cyan(`  ↻ ${envFileConfig.path} (synced ${synced} new vars)`))
+      const result = await syncEnvFile(sourcePath, destPath, envFileConfig.path, false)
+      if (result.added > 0) {
+        console.log(chalk.cyan(`  ↻ ${envFileConfig.path} (synced ${result.added} new vars)`))
       } else {
         console.log(chalk.gray(`  → ${envFileConfig.path} (up to date)`))
+      }
+      // Warn about differing values
+      for (const key of result.differing) {
+        console.log(chalk.yellow(`    ⚠ ${key} differs from base (use sync-env --force to update)`))
       }
     } else {
       // Ensure target directory exists and copy
