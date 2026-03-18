@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import * as readline from 'readline'
 import chalk from 'chalk'
-import { detectServices, detectInfrastructure, detectSetupCommands, detectPackageManager, detectEnvFiles } from '../detect.js'
+import { detectServices, detectInfrastructure, detectSetupCommands, detectPackageManager, detectEnvFiles, detectPortEnvVars } from '../detect.js'
 
 const TEMPLATE = `{
   // Default branch for new workspaces
@@ -117,6 +117,51 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
       }
     }
 
+    // Detect env vars with localhost URLs that need dynamic ports
+    const portEnvVars = await detectPortEnvVars(cwd, services)
+    const serviceEnvOverrides: Record<string, Record<string, string>> = {}
+    
+    for (const [serviceLoc, vars] of Object.entries(portEnvVars)) {
+      for (const v of vars) {
+        if (v.serviceName) {
+          // This env var references another service's port
+          const targetService = services.find(s => s.name === v.serviceName)
+          if (targetService) {
+            // Find which service should have this env var
+            const ownerService = serviceLoc === 'root' ? 'frontend' : serviceLoc
+            if (!serviceEnvOverrides[ownerService]) {
+              serviceEnvOverrides[ownerService] = {}
+            }
+            serviceEnvOverrides[ownerService][v.varName] = `http://localhost:{${v.serviceName}.port}`
+          }
+        }
+      }
+    }
+
+    // Also check for APP_URL type vars that should use the service's own port
+    for (const [serviceLoc, vars] of Object.entries(portEnvVars)) {
+      for (const v of vars) {
+        const ownerService = serviceLoc === 'root' ? 'frontend' : serviceLoc
+        const service = services.find(s => s.name === ownerService)
+        if (service && v.port === service.basePort && !v.serviceName) {
+          // This var points to the service's own port
+          if (!serviceEnvOverrides[ownerService]) {
+            serviceEnvOverrides[ownerService] = {}
+          }
+          serviceEnvOverrides[ownerService][v.varName] = `http://localhost:{${ownerService}.port}`
+        }
+      }
+    }
+
+    if (Object.keys(serviceEnvOverrides).length > 0) {
+      console.log(chalk.blue('\n🔗 Detected URL env vars (will use dynamic ports):'))
+      for (const [svc, vars] of Object.entries(serviceEnvOverrides)) {
+        for (const [varName, value] of Object.entries(vars)) {
+          console.log(chalk.cyan(`  • ${svc}: ${varName} → ${value}`))
+        }
+      }
+    }
+
     const config = {
       defaultBranch: 'main',
       workspacesDir: '.worktrees',
@@ -130,7 +175,7 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
         cwd: s.cwd ?? '.',
         basePort: s.basePort,
         portEnvVar: 'PORT',
-        env: {},
+        env: serviceEnvOverrides[s.name] ?? {},
         shared: sharedServices.has(s.name),
       })),
     }

@@ -415,3 +415,65 @@ export async function detectEnvFiles(cwd: string): Promise<EnvFileConfig[]> {
   
   return envFiles
 }
+
+// Detect env vars that contain localhost URLs and should have dynamic ports
+export interface PortEnvVar {
+  varName: string
+  port: number
+  serviceName?: string  // guessed service this belongs to
+}
+
+export async function detectPortEnvVars(cwd: string, services: DetectedService[]): Promise<Record<string, PortEnvVar[]>> {
+  const result: Record<string, PortEnvVar[]> = {}
+  
+  // Map ports to service names
+  const portToService = new Map<number, string>()
+  for (const svc of services) {
+    portToService.set(svc.basePort, svc.name)
+  }
+  
+  // Common env file locations to scan
+  const locations = [
+    { path: '.env', service: null },
+    { path: '.env.local', service: null },
+    { path: 'frontend/.env', service: 'frontend' },
+    { path: 'frontend/.env.local', service: 'frontend' },
+    { path: 'web/.env', service: 'web' },
+    { path: 'app/.env', service: 'app' },
+  ]
+  
+  for (const loc of locations) {
+    const fullPath = join(cwd, loc.path)
+    const content = await tryRead(fullPath)
+    if (!content) continue
+    
+    const portVars: PortEnvVar[] = []
+    
+    for (const line of content.split('\n')) {
+      // Match env vars with localhost URLs containing ports
+      const match = line.match(/^([A-Z][A-Z0-9_]*)=.*localhost:(\d{4,5})/)
+      if (match) {
+        const varName = match[1]
+        const port = parseInt(match[2], 10)
+        
+        // Skip if this is a database/infra port
+        if (port === 27017 || port === 27018 || port === 6379 || port === 6380 || port === 5432) {
+          continue
+        }
+        
+        portVars.push({
+          varName,
+          port,
+          serviceName: portToService.get(port),
+        })
+      }
+    }
+    
+    if (portVars.length > 0) {
+      const serviceName = loc.service ?? 'root'
+      result[serviceName] = [...(result[serviceName] ?? []), ...portVars]
+    }
+  }
+  
+  return result
+}
