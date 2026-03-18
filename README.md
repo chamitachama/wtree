@@ -114,6 +114,23 @@ Each workspace gets a slot (1, 2, 3...). Actual port = `basePort + (slot × port
 | feature-a | 1    | 3100     | 8100    |
 | feature-b | 2    | 3200     | 8200    |
 
+### Shared services
+
+Mark a service as `shared: true` to run a single global instance instead of one per worktree:
+
+```json5
+"services": [
+  { "name": "backend", "shared": true, "basePort": 8000, ... },  // one instance
+  { "name": "frontend", "basePort": 3000, ... }  // per worktree
+]
+```
+
+- Shared services run from the main repo root (not the worktree)
+- Use fixed `basePort` (no slot offset)
+- Start once, reused across all worktrees
+- Not stopped when individual worktrees stop
+- `wtree init` asks interactively which services to share
+
 ## Commands
 
 ### Workspace management

@@ -9,6 +9,7 @@ export interface ServiceConfig {
   basePort: number
   portEnvVar: string
   env: Record<string, string>
+  shared: boolean
 }
 
 export interface SetupCommand {
@@ -59,6 +60,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<WtreeConf
           basePort: s.basePort,
           portEnvVar: s.portEnvVar ?? 'PORT',
           env: s.env ?? {},
+          shared: s.shared ?? false,
         }
       }),
     }

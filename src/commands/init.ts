@@ -77,6 +77,23 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
       infraMap[infra.type] = infra.connectionString
     }
 
+    // Print detected services
+    console.log(chalk.blue('\n📋 Detected services:'))
+    for (const s of services) {
+      console.log(chalk.cyan(`  • ${s.name} (port ${s.basePort})`))
+    }
+
+    // Ask about shared services
+    console.log(chalk.gray('\nShared services run once globally instead of per-worktree.'))
+    const sharedServices: Set<string> = new Set()
+    
+    for (const s of services) {
+      const answer = await ask(chalk.yellow(`Share ${s.name} across all worktrees? (y/N) `))
+      if (answer.toLowerCase() === 'y') {
+        sharedServices.add(s.name)
+      }
+    }
+
     const config = {
       defaultBranch: 'main',
       workspacesDir: '.worktrees',
@@ -91,13 +108,16 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
         basePort: s.basePort,
         portEnvVar: 'PORT',
         env: {},
+        shared: sharedServices.has(s.name),
       })),
     }
     await writeFile(configPath, JSON.stringify(config, null, 2))
 
-    // Print detected services
+    // Summary
+    console.log('')
     for (const s of services) {
-      console.log(chalk.green(`✓ Detected service: ${s.name} (${s.command} → port ${s.basePort})`))
+      const sharedLabel = sharedServices.has(s.name) ? chalk.magenta(' [shared]') : ''
+      console.log(chalk.green(`✓ ${s.name} → port ${s.basePort}${sharedLabel}`))
     }
 
     // Print detected infrastructure with hints

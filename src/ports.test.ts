@@ -5,8 +5,8 @@ import type { ServiceConfig } from './config.js'
 
 const services: ServiceConfig[] = [
   { name: 'frontend', command: 'pnpm dev', cwd: '.', basePort: 3000, portEnvVar: 'PORT',
-    env: { 'NEXT_PUBLIC_API_URL': 'http://localhost:{backend.port}' } },
-  { name: 'backend', command: 'uvicorn main:app', cwd: '.', basePort: 8000, portEnvVar: 'PORT', env: {} },
+    env: { 'NEXT_PUBLIC_API_URL': 'http://localhost:{backend.port}' }, shared: false },
+  { name: 'backend', command: 'uvicorn main:app', cwd: '.', basePort: 8000, portEnvVar: 'PORT', env: {}, shared: false },
 ]
 
 describe('assignPorts', () => {
