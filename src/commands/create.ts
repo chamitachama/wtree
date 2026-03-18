@@ -5,7 +5,7 @@ import { WorktreeManager } from '../worktree.js'
 import { ProcessManager } from '../processes.js'
 import { assignPorts, resolveEnv } from '../ports.js'
 import { writeStatusDoc } from '../status-writer.js'
-import { runSetup } from '../setup.js'
+import { runSetup, copyEnvFiles } from '../setup.js'
 
 const pm = new ProcessManager()
 
@@ -22,9 +22,12 @@ export async function createCommand(name: string, options: { from?: string; skip
   console.log(chalk.blue(`Creating workspace: ${name} (from ${baseBranch})`))
   const worktreePath = await wm.create(name, baseBranch)
 
-  // Run setup commands for new worktree (unless skipped)
-  if (!options.skipSetup && config.setup.length > 0) {
-    await runSetup(config.setup, worktreePath)
+  // Copy .env files and run setup commands for new worktree (unless skipped)
+  if (!options.skipSetup) {
+    await copyEnvFiles(config.envFiles, root, worktreePath)
+    if (config.setup.length > 0) {
+      await runSetup(config.setup, worktreePath)
+    }
   }
 
   const pids: Record<string, number> = {}

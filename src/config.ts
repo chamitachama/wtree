@@ -20,6 +20,7 @@ export interface WtreeConfig {
   defaultBranch: string
   workspacesDir: string
   portStep: number
+  envFiles: string[]
   setup: SetupCommand[]
   services: ServiceConfig[]
 }
@@ -33,6 +34,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<WtreeConf
       defaultBranch: parsed.defaultBranch ?? 'main',
       workspacesDir: parsed.workspacesDir ?? '.worktrees',
       portStep: parsed.portStep ?? 100,
+      envFiles: parsed.envFiles ?? [],
       setup: (parsed.setup ?? []).map((s: Partial<SetupCommand>, i: number) => ({
         command: s.command ?? '',
         cwd: s.cwd ?? '.',

@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
-import { access, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { access, writeFile, copyFile, mkdir } from 'fs/promises'
+import { join, dirname } from 'path'
 import chalk from 'chalk'
 import type { SetupCommand } from './config.js'
 
@@ -49,4 +49,45 @@ export async function runSetup(
 
   await markSetupDone(worktreePath)
   console.log(chalk.green('✓ Setup complete\n'))
+}
+
+export async function copyEnvFiles(
+  envFiles: string[],
+  rootPath: string,
+  worktreePath: string
+): Promise<void> {
+  if (envFiles.length === 0) return
+
+  console.log(chalk.blue('\n🔐 Copying .env files...'))
+
+  for (const envFile of envFiles) {
+    const relativePath = envFile.replace(/^\.\//, '')
+    const sourcePath = join(rootPath, relativePath)
+    const destPath = join(worktreePath, relativePath)
+
+    // Check if source exists
+    try {
+      await access(sourcePath)
+    } catch {
+      console.log(chalk.yellow(`  ⚠ Skipping ${envFile} (not found in main repo)`))
+      continue
+    }
+
+    // Don't overwrite existing .env in worktree
+    try {
+      await access(destPath)
+      console.log(chalk.gray(`  → ${envFile} (already exists, skipping)`))
+      continue
+    } catch {
+      // File doesn't exist, proceed with copy
+    }
+
+    // Ensure target directory exists
+    await mkdir(dirname(destPath), { recursive: true })
+
+    await copyFile(sourcePath, destPath)
+    console.log(chalk.green(`  ✓ ${envFile}`))
+  }
+
+  console.log('')
 }

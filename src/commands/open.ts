@@ -5,7 +5,7 @@ import { WorktreeManager } from '../worktree.js'
 import { ProcessManager } from '../processes.js'
 import { assignPorts, resolveEnv } from '../ports.js'
 import { writeStatusDoc } from '../status-writer.js'
-import { isSetupDone, runSetup } from '../setup.js'
+import { isSetupDone, runSetup, copyEnvFiles } from '../setup.js'
 
 const pm = new ProcessManager()
 
@@ -31,11 +31,14 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
   console.log(chalk.blue(`${existing?.status === 'stopped' ? 'Restarting' : 'Opening'} workspace: ${branch}`))
   const worktreePath = await wm.open(branch)
 
-  // Run setup if not done yet (and not skipped)
-  if (!options.skipSetup && config.setup.length > 0) {
+  // Copy .env files and run setup if not done yet (and not skipped)
+  if (!options.skipSetup) {
     const setupDone = await isSetupDone(worktreePath)
     if (!setupDone) {
-      await runSetup(config.setup, worktreePath)
+      await copyEnvFiles(config.envFiles, root, worktreePath)
+      if (config.setup.length > 0) {
+        await runSetup(config.setup, worktreePath)
+      }
     }
   }
 
