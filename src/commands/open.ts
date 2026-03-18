@@ -95,7 +95,8 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
         service.command,
         cwd,
         { [service.portEnvVar]: String(port), ...resolveEnv(service.env, allPorts, config.infrastructure) },
-        logFile
+        logFile,
+        true  // shared = true, won't be killed on Ctrl+C
       )
       
       allPorts[service.name] = port

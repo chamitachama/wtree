@@ -10,11 +10,17 @@ export interface StartResult {
   error?: string
 }
 
+interface ProcessEntry {
+  pid: number
+  kill: () => void
+  shared: boolean
+}
+
 export class ProcessManager {
-  private procs = new Map<string, { pid: number; kill: () => void }>()
+  private procs = new Map<string, ProcessEntry>()
 
   constructor() {
-    process.once('SIGINT', async () => { await this.stopAll(); process.exit(0) })
+    process.once('SIGINT', async () => { await this.stopNonShared(); process.exit(0) })
   }
 
   async start(
@@ -22,9 +28,10 @@ export class ProcessManager {
     command: string,
     cwd: string,
     env: Record<string, string>,
-    logFile?: string
+    logFile?: string,
+    shared: boolean = false
   ): Promise<number> {
-    const result = await this.startWithVerify(id, command, cwd, env, logFile)
+    const result = await this.startWithVerify(id, command, cwd, env, logFile, 500, shared)
     return result.pid
   }
 
@@ -34,7 +41,8 @@ export class ProcessManager {
     cwd: string,
     env: Record<string, string>,
     logFile?: string,
-    verifyDelayMs: number = 500
+    verifyDelayMs: number = 500,
+    shared: boolean = false
   ): Promise<StartResult> {
     const useLog = !!logFile
     let stderrBuffer = ''
@@ -44,9 +52,15 @@ export class ProcessManager {
       env: { ...process.env, ...env },
       stdio: useLog ? ['inherit', 'pipe', 'pipe'] : 'inherit',
       shell: true,
+      detached: shared,  // Detach shared services so they survive parent exit
     })
     if (!child.pid) throw new Error(`Failed to spawn process for "${id}"`)
     const pid = child.pid
+
+    // Unref shared processes so they don't keep the parent alive
+    if (shared) {
+      child.unref()
+    }
 
     let exited = false
     let exitCode: number | null = null
@@ -68,7 +82,7 @@ export class ProcessManager {
       })
     }
 
-    this.procs.set(id, { pid, kill: () => child.kill('SIGTERM') })
+    this.procs.set(id, { pid, kill: () => child.kill('SIGTERM'), shared })
     
     child.on('exit', (code) => {
       exited = true
@@ -94,5 +108,14 @@ export class ProcessManager {
     if (p) { p.kill(); this.procs.delete(id); await new Promise(r => setTimeout(r, 200)) }
   }
 
-  async stopAll(): Promise<void> { await Promise.all([...this.procs.keys()].map(id => this.stop(id))) }
+  async stopNonShared(): Promise<void> {
+    const nonShared = [...this.procs.entries()]
+      .filter(([, p]) => !p.shared)
+      .map(([id]) => id)
+    await Promise.all(nonShared.map(id => this.stop(id)))
+  }
+
+  async stopAll(): Promise<void> { 
+    await Promise.all([...this.procs.keys()].map(id => this.stop(id))) 
+  }
 }
