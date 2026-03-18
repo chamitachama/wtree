@@ -26,9 +26,11 @@ program.command('open <branch>')
   .description('Open an existing branch as a workspace')
   .option('--skip-setup', 'Skip running setup commands')
   .option('--strict', 'Fail if setup commands fail (default: continue with warning)')
+  .option('-b, --browser', 'Open frontend in browser after starting')
   .action((branch, opts) => openCommand(branch, { 
     skipSetup: opts.skipSetup,
-    continueOnError: !opts.strict
+    continueOnError: !opts.strict,
+    browser: opts.browser
   }))
 program.command('create <name>')
   .description('Create a new branch and workspace')

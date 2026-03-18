@@ -1,5 +1,18 @@
 import chalk from 'chalk'
-import { execSync } from 'child_process'
+import { execSync, exec } from 'child_process'
+
+// Create clickable terminal hyperlink (OSC 8)
+function link(url: string, text?: string): string {
+  const label = text ?? url
+  // OSC 8 hyperlink: \e]8;;URL\e\\TEXT\e]8;;\e\\
+  return `\x1b]8;;${url}\x1b\\${label}\x1b]8;;\x1b\\`
+}
+
+function openBrowser(url: string): void {
+  const cmd = process.platform === 'darwin' ? 'open' :
+              process.platform === 'win32' ? 'start' : 'xdg-open'
+  exec(`${cmd} ${url}`, () => {})
+}
 import { loadConfig } from '../config.js'
 import { StateManager } from '../state.js'
 import { WorktreeManager } from '../worktree.js'
@@ -14,6 +27,7 @@ const pm = new ProcessManager()
 export interface OpenOptions {
   skipSetup?: boolean
   continueOnError?: boolean  // Continue even if setup fails
+  browser?: boolean  // Auto-open browser after starting
 }
 
 async function resolvePrBranch(input: string): Promise<string> {
@@ -67,7 +81,8 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
     if (existingShared?.status === 'running') {
       // Already running, reuse
       allPorts[service.name] = existingShared.port
-      console.log(chalk.gray(`↳ ${service.name} → http://localhost:${existingShared.port} (shared, already running)`))
+      const url = `http://localhost:${existingShared.port}`
+      console.log(chalk.gray(`↳ ${service.name} → ${link(url)} (shared, already running)`))
     } else {
       // Start shared service from main repo root
       const port = service.basePort
@@ -91,7 +106,8 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
         await state.addShared({ name: service.name, port, pid, status: 'running' })
       }
       
-      console.log(chalk.magenta(`✓ ${service.name} → http://localhost:${port} (shared)`))
+      const sharedUrl = `http://localhost:${port}`
+      console.log(chalk.magenta(`✓ ${service.name} → ${link(sharedUrl)} (shared)`))
     }
   }
 
@@ -172,7 +188,8 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
     }
     
     pids[service.name] = result.pid
-    console.log(chalk.green(`✓ ${service.name} → http://localhost:${port}`))
+    const serviceUrl = `http://localhost:${port}`
+    console.log(chalk.green(`✓ ${service.name} → ${link(serviceUrl)}`))
   }
 
   if (existing?.status === 'stopped') {
@@ -181,6 +198,17 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
     await state.add({ name, branch: resolvedBranch, path: worktreePath, baseBranch: config.defaultBranch, ports: regularPorts, pids, status: 'running', slot })
   }
   await writeStatusDoc(root, state, wm)
+
+  // Auto-open browser if requested
+  if (options.browser && regularServices.length > 0) {
+    // Open the first non-backend service (usually frontend)
+    const frontendService = regularServices.find(s => 
+      s.name.includes('front') || s.name === 'web' || s.name === 'app'
+    ) ?? regularServices[0]
+    const browserUrl = `http://localhost:${allPorts[frontendService.name]}`
+    console.log(chalk.blue(`\n🌐 Opening ${browserUrl} in browser...`))
+    openBrowser(browserUrl)
+  }
 
   // Handle Ctrl+C gracefully
   const cleanup = async () => {
