@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { program } from 'commander'
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import { openCommand } from './commands/open.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'))
 import { createCommand } from './commands/create.js'
 import { listCommand } from './commands/list.js'
 import { stopCommand } from './commands/stop.js'
@@ -14,7 +20,7 @@ import { syncEnvCommand } from './commands/sync-env.js'
 program
   .name('wtree')
   .description('Run multiple git worktrees in parallel with isolated ports')
-  .version('0.1.0')
+  .version(pkg.version)
 
 program.command('open <branch>')
   .description('Open an existing branch as a workspace')
