@@ -64,6 +64,10 @@ function parseEnvFile(content: string): Record<string, string> {
   return vars
 }
 
+function serializeEnvVars(vars: Record<string, string>): string {
+  return Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n')
+}
+
 async function verifyRequiredVars(
   destPath: string, 
   required: string[], 
@@ -82,6 +86,38 @@ async function verifyRequiredVars(
   } else {
     console.log(chalk.gray(`    ✓ All required vars present (${required.length})`))
   }
+}
+
+export async function syncEnvFile(
+  sourcePath: string,
+  destPath: string,
+  envFile: string
+): Promise<number> {
+  const { readFile, appendFile } = await import('fs/promises')
+  
+  const sourceContent = await readFile(sourcePath, 'utf-8')
+  const destContent = await readFile(destPath, 'utf-8')
+  
+  const sourceVars = parseEnvFile(sourceContent)
+  const destVars = parseEnvFile(destContent)
+  
+  // Find vars in source that are missing in dest
+  const missingVars: Record<string, string> = {}
+  for (const [key, value] of Object.entries(sourceVars)) {
+    if (!(key in destVars)) {
+      missingVars[key] = value
+    }
+  }
+  
+  if (Object.keys(missingVars).length === 0) {
+    return 0
+  }
+  
+  // Append missing vars to dest
+  const toAppend = '\n# Synced from base\n' + serializeEnvVars(missingVars) + '\n'
+  await appendFile(destPath, toAppend)
+  
+  return Object.keys(missingVars).length
 }
 
 export async function copyEnvFiles(
@@ -106,21 +142,28 @@ export async function copyEnvFiles(
       continue
     }
 
-    // Don't overwrite existing .env in worktree
+    // Check if file already exists in worktree
     let alreadyExists = false
     try {
       await access(destPath)
-      console.log(chalk.gray(`  → ${envFileConfig.path} (already exists, skipping copy)`))
       alreadyExists = true
     } catch {
-      // File doesn't exist, proceed with copy
+      // File doesn't exist
     }
 
-    if (!alreadyExists) {
-      // Ensure target directory exists
+    if (alreadyExists) {
+      // Sync missing vars from base to worktree
+      const synced = await syncEnvFile(sourcePath, destPath, envFileConfig.path)
+      if (synced > 0) {
+        console.log(chalk.cyan(`  ↻ ${envFileConfig.path} (synced ${synced} new vars)`))
+      } else {
+        console.log(chalk.gray(`  → ${envFileConfig.path} (up to date)`))
+      }
+    } else {
+      // Ensure target directory exists and copy
       await mkdir(dirname(destPath), { recursive: true })
       await copyFile(sourcePath, destPath)
-      console.log(chalk.green(`  ✓ ${envFileConfig.path}`))
+      console.log(chalk.green(`  ✓ ${envFileConfig.path} (copied)`))
     }
 
     // Verify required vars (even if file already existed)

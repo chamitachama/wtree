@@ -155,6 +155,7 @@ wtree destroy <name>               # Stop + delete (requires typing DELETE)
 wtree browser <name>    # Open workspace frontend in browser
 wtree logs <name>       # Tail logs for a workspace
 wtree claude <name>     # Launch Claude Code in workspace context
+wtree sync-env <name>   # Sync env vars from base to worktree
 ```
 
 ## Features
@@ -175,9 +176,10 @@ Copy `.env` files from your main repo into each worktree automatically:
 ```
 
 - Copies on first `open` or `create`
+- **Syncs new vars** on subsequent opens (appends missing vars without overwriting)
 - Skips if file doesn't exist in main repo (warning)
-- Never overwrites existing `.env` in worktree
 - Warns if required vars are missing
+- Use `wtree sync-env <name>` to sync on demand
 
 ### 📦 Setup commands
 

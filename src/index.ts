@@ -9,6 +9,7 @@ import { initCommand } from './commands/init.js'
 import { browserCommand } from './commands/browser.js'
 import { logsCommand } from './commands/logs.js'
 import { claudeCommand } from './commands/claude.js'
+import { syncEnvCommand } from './commands/sync-env.js'
 
 program
   .name('wtree')
@@ -32,5 +33,6 @@ program.command('init').description('Set up wtree in the current project').actio
 program.command('browser <name>').description('Open workspace frontend in browser').action((name) => browserCommand(name))
 program.command('logs <name>').description('Tail logs for a workspace service').action((name) => logsCommand(name))
 program.command('claude <name>').description('Launch Claude Code in workspace with context').action((name) => claudeCommand(name))
+program.command('sync-env <name>').description('Sync env vars from base to worktree').action((name) => syncEnvCommand(name))
 
 program.parse()
