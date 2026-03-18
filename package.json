@@ -1,6 +1,6 @@
 {
   "name": "wtree",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Run multiple git worktrees in parallel with isolated ports",
   "type": "module",
   "main": "dist/index.js",
@@ -13,9 +13,27 @@
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "git",
+    "worktree",
+    "parallel",
+    "development",
+    "monorepo",
+    "cli",
+    "ports",
+    "docker"
+  ],
+  "author": "chamitachama",
   "repository": {
     "type": "git",
     "url": "https://github.com/chamitachama/wtree"
+  },
+  "homepage": "https://github.com/chamitachama/wtree#readme",
+  "bugs": {
+    "url": "https://github.com/chamitachama/wtree/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc",
