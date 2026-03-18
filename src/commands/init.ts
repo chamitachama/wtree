@@ -3,7 +3,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import * as readline from 'readline'
 import chalk from 'chalk'
-import { detectServices, detectInfrastructure, detectSetupCommands, detectPackageManager } from '../detect.js'
+import { detectServices, detectInfrastructure, detectSetupCommands, detectPackageManager, detectEnvFiles } from '../detect.js'
 
 const TEMPLATE = `{
   // Default branch for new workspaces
@@ -106,11 +106,22 @@ export async function initCommand(cwd: string = process.cwd()): Promise<void> {
       }
     }
 
+    // Auto-detect env files
+    const envFiles = await detectEnvFiles(cwd)
+    
+    if (envFiles.length > 0) {
+      console.log(chalk.blue('\n🔐 Detected env files:'))
+      for (const ef of envFiles) {
+        const reqStr = ef.required?.length ? ` (${ef.required.length} important vars)` : ''
+        console.log(chalk.cyan(`  • ${ef.path}${reqStr}`))
+      }
+    }
+
     const config = {
       defaultBranch: 'main',
       workspacesDir: '.worktrees',
       portStep: 100,
-      envFiles: [],
+      envFiles,
       infrastructure: infraMap,
       setup: setupCommands,
       services: services.map(s => ({

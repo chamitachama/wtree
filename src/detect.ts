@@ -332,4 +332,86 @@ async function detectFromMonorepo(cwd: string): Promise<DetectedService[] | null
   return services.length > 0 ? services : null
 }
 
-// End of detect.ts
+// Detect .env files in the project
+export interface EnvFileConfig {
+  path: string
+  required?: string[]
+}
+
+export async function detectEnvFiles(cwd: string): Promise<EnvFileConfig[]> {
+  const envFiles: EnvFileConfig[] = []
+  
+  // Common env file locations
+  const locations = [
+    '.env',
+    '.env.local',
+    'frontend/.env',
+    'frontend/.env.local',
+    'backend/.env',
+    'web/.env',
+    'app/.env',
+    'packages/frontend/.env',
+    'packages/backend/.env',
+  ]
+  
+  for (const loc of locations) {
+    const fullPath = join(cwd, loc)
+    if (existsSync(fullPath)) {
+      // Try to detect important vars
+      const content = await tryRead(fullPath)
+      const required: string[] = []
+      
+      if (content) {
+        // Look for common important env vars
+        const importantPatterns = [
+          /^(NEXT_PUBLIC_CLERK|CLERK_)/m,
+          /^(DATABASE_URL|MONGODB|REDIS)/m,
+          /^(NEXTAUTH_|AUTH_)/m,
+          /^(STRIPE_|OPENAI_|ANTHROPIC_)/m,
+        ]
+        
+        for (const line of content.split('\n')) {
+          const match = line.match(/^([A-Z][A-Z0-9_]*)=/)
+          if (match) {
+            const varName = match[1]
+            for (const pattern of importantPatterns) {
+              if (pattern.test(varName)) {
+                required.push(varName)
+                break
+              }
+            }
+          }
+        }
+      }
+      
+      envFiles.push({
+        path: `./${loc}`,
+        ...(required.length > 0 ? { required: required.slice(0, 5) } : {})
+      })
+    }
+  }
+  
+  // Also scan service directories from docker-compose
+  const raw = await tryRead(join(cwd, 'docker-compose.yml')) ?? await tryRead(join(cwd, 'docker-compose.yaml'))
+  if (raw) {
+    try {
+      const doc = yaml.load(raw) as Record<string, unknown>
+      const services = doc?.services as Record<string, { build?: { context?: string }; env_file?: string | string[] }> | undefined
+      
+      if (services) {
+        for (const [, svc] of Object.entries(services)) {
+          // Check env_file from docker-compose
+          const envFileRefs = Array.isArray(svc.env_file) ? svc.env_file : svc.env_file ? [svc.env_file] : []
+          for (const ef of envFileRefs) {
+            const normalizedPath = ef.startsWith('./') ? ef : `./${ef}`
+            if (!envFiles.some(e => e.path === normalizedPath) && existsSync(join(cwd, ef))) {
+              envFiles.push({ path: normalizedPath })
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  
+  return envFiles
+}
