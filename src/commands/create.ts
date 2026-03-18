@@ -5,10 +5,11 @@ import { WorktreeManager } from '../worktree.js'
 import { ProcessManager } from '../processes.js'
 import { assignPorts, resolveEnv } from '../ports.js'
 import { writeStatusDoc } from '../status-writer.js'
+import { runSetup } from '../setup.js'
 
 const pm = new ProcessManager()
 
-export async function createCommand(name: string, options: { from?: string }): Promise<void> {
+export async function createCommand(name: string, options: { from?: string; skipSetup?: boolean }): Promise<void> {
   const root = process.cwd()
   const config = await loadConfig(root)
   const baseBranch = options.from ?? config.defaultBranch
@@ -20,6 +21,11 @@ export async function createCommand(name: string, options: { from?: string }): P
 
   console.log(chalk.blue(`Creating workspace: ${name} (from ${baseBranch})`))
   const worktreePath = await wm.create(name, baseBranch)
+
+  // Run setup commands for new worktree (unless skipped)
+  if (!options.skipSetup && config.setup.length > 0) {
+    await runSetup(config.setup, worktreePath)
+  }
 
   const pids: Record<string, number> = {}
   for (const service of config.services) {

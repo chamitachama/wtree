@@ -21,7 +21,10 @@ export class WorktreeManager {
   async open(branch: string): Promise<string> {
     await mkdir(this.worktreesDir, { recursive: true })
     const path = join(this.worktreesDir, this.safeName(branch))
-    await this.git.raw(['worktree', 'add', path, branch])
+    const existing = await this.list()
+    if (!existing.some(w => w.path === path)) {
+      await this.git.raw(['worktree', 'add', path, branch])
+    }
     return path
   }
 

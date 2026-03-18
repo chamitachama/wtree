@@ -2,3 +2,5 @@ node_modules/
 dist/
 .worktrees/
 .wtree/state.json
+**/.DS_Store
+.claude/

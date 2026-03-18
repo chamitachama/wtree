@@ -5,10 +5,15 @@ import { WorktreeManager } from '../worktree.js'
 import { ProcessManager } from '../processes.js'
 import { assignPorts, resolveEnv } from '../ports.js'
 import { writeStatusDoc } from '../status-writer.js'
+import { isSetupDone, runSetup } from '../setup.js'
 
 const pm = new ProcessManager()
 
-export async function openCommand(branch: string): Promise<void> {
+export interface OpenOptions {
+  skipSetup?: boolean
+}
+
+export async function openCommand(branch: string, options: OpenOptions = {}): Promise<void> {
   const root = process.cwd()
   const config = await loadConfig(root)
   const state = new StateManager(root)
@@ -25,6 +30,14 @@ export async function openCommand(branch: string): Promise<void> {
 
   console.log(chalk.blue(`${existing?.status === 'stopped' ? 'Restarting' : 'Opening'} workspace: ${branch}`))
   const worktreePath = await wm.open(branch)
+
+  // Run setup if not done yet (and not skipped)
+  if (!options.skipSetup && config.setup.length > 0) {
+    const setupDone = await isSetupDone(worktreePath)
+    if (!setupDone) {
+      await runSetup(config.setup, worktreePath)
+    }
+  }
 
   const pids: Record<string, number> = {}
   for (const service of config.services) {

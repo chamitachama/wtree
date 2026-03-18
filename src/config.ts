@@ -11,10 +11,16 @@ export interface ServiceConfig {
   env: Record<string, string>
 }
 
+export interface SetupCommand {
+  command: string
+  cwd: string
+}
+
 export interface WtreeConfig {
   defaultBranch: string
   workspacesDir: string
   portStep: number
+  setup: SetupCommand[]
   services: ServiceConfig[]
 }
 
@@ -27,6 +33,10 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<WtreeConf
       defaultBranch: parsed.defaultBranch ?? 'main',
       workspacesDir: parsed.workspacesDir ?? '.worktrees',
       portStep: parsed.portStep ?? 100,
+      setup: (parsed.setup ?? []).map((s: Partial<SetupCommand>, i: number) => ({
+        command: s.command ?? '',
+        cwd: s.cwd ?? '.',
+      })).filter((s: SetupCommand) => s.command),
       services: parsed.services.map((s: Partial<ServiceConfig>, i: number) => {
         if (!s.name) throw new Error(`Service at index ${i} is missing required field "name"`)
         if (!s.command) throw new Error(`Service "${s.name}" is missing required field "command"`)
