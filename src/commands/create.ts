@@ -6,6 +6,7 @@ import { ProcessManager } from '../processes.js'
 import { assignPorts, resolveEnv } from '../ports.js'
 import { writeStatusDoc } from '../status-writer.js'
 import { runSetup, copyEnvFiles } from '../setup.js'
+import { sortByDependencies, waitForHealthy } from '../health.js'
 
 const pm = new ProcessManager()
 
@@ -71,9 +72,31 @@ export async function createCommand(name: string, options: { from?: string; skip
     }
   }
 
-  // Start regular services in worktree
+  // Start regular services in dependency order
   const pids: Record<string, number> = {}
-  for (const service of regularServices) {
+  const sortedServices = sortByDependencies(regularServices)
+  
+  for (const service of sortedServices) {
+    // Wait for dependencies to be healthy
+    if (service.dependsOn && service.dependsOn.length > 0) {
+      for (const depName of service.dependsOn) {
+        const depService = config.services.find(s => s.name === depName)
+        const depPort = allPorts[depName]
+        if (depService?.healthCheck && depPort) {
+          process.stdout.write(chalk.gray(`  ⏳ Waiting for ${depName}...`))
+          const healthy = await waitForHealthy(depService, depPort, (attempt, max) => {
+            process.stdout.write('.')
+          })
+          if (!healthy) {
+            console.log(chalk.red(` timeout!`))
+            console.error(chalk.red(`\n✗ ${depName} failed health check, cannot start ${service.name}`))
+            process.exit(1)
+          }
+          console.log(chalk.green(' ready'))
+        }
+      }
+    }
+    
     const port = allPorts[service.name]
     const cwd = `${worktreePath}/${service.cwd.replace('./', '')}`
     const serviceId = `${name}:${service.name}`

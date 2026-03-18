@@ -79,7 +79,11 @@ Auto-detects services from `docker-compose.yml`, `Procfile`, or `package.json` a
       "cwd": "./backend",
       "basePort": 8000,
       "portEnvVar": "PORT",
-      "shared": true,  // Single instance for all worktrees
+      "shared": true,
+      "healthCheck": {
+        "url": "http://localhost:{port}/health",
+        "timeout": 30000
+      },
       "env": {
         "DATABASE_URL": "{infrastructure.mongodb}",
         "REDIS_URL": "{infrastructure.redis}"
@@ -91,7 +95,7 @@ Auto-detects services from `docker-compose.yml`, `Procfile`, or `package.json` a
       "cwd": "./frontend",
       "basePort": 3000,
       "portEnvVar": "PORT",
-      "shared": false,  // One per worktree (default)
+      "dependsOn": ["backend"],
       "env": {
         "NEXT_PUBLIC_API_URL": "http://localhost:{backend.port}"
       }
@@ -115,6 +119,50 @@ Each workspace gets a slot (1, 2, 3...). Actual port = `basePort + (slot × port
 |-----------|------|----------|---------|
 | feature-a | 1    | 3100     | 8100    |
 | feature-b | 2    | 3200     | 8200    |
+
+### PR integration
+
+Open a GitHub PR directly by number:
+
+```bash
+wtree open pr/123    # or pr#123
+# 🔍 Fetching PR #123 info...
+# ✓ PR #123 → feat/my-feature-branch
+# Opening workspace: feat/my-feature-branch
+```
+
+Requires `gh` CLI to be installed and authenticated.
+
+### Health checks & dependencies
+
+Define health checks and service dependencies to ensure proper startup order:
+
+```json5
+"services": [
+  {
+    "name": "backend",
+    "command": "uvicorn main:app",
+    "basePort": 8000,
+    "healthCheck": {
+      "url": "http://localhost:{port}/health",
+      "timeout": 30000
+    }
+  },
+  {
+    "name": "frontend",
+    "command": "pnpm dev",
+    "basePort": 3000,
+    "dependsOn": ["backend"]  // Waits for backend health check
+  }
+]
+```
+
+Output:
+```
+✓ backend → http://localhost:8100
+  ⏳ Waiting for backend... ready
+✓ frontend → http://localhost:3100
+```
 
 ### Shared services
 

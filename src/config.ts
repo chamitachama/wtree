@@ -2,6 +2,14 @@ import { readFile } from 'fs/promises'
 import { join } from 'path'
 import JSON5 from 'json5'
 
+export interface HealthCheck {
+  url?: string           // HTTP endpoint to check (e.g., "http://localhost:{port}/health")
+  command?: string       // Command to run (exit 0 = healthy)
+  interval?: number      // Check interval in ms (default: 1000)
+  timeout?: number       // Total timeout in ms (default: 30000)
+  retries?: number       // Number of retries (default: 30)
+}
+
 export interface ServiceConfig {
   name: string
   command: string
@@ -10,6 +18,8 @@ export interface ServiceConfig {
   portEnvVar: string
   env: Record<string, string>
   shared: boolean
+  dependsOn?: string[]   // Services that must be healthy before this one starts
+  healthCheck?: HealthCheck
 }
 
 export interface SetupCommand {
@@ -61,6 +71,8 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<WtreeConf
           portEnvVar: s.portEnvVar ?? 'PORT',
           env: s.env ?? {},
           shared: s.shared ?? false,
+          dependsOn: s.dependsOn ?? [],
+          healthCheck: s.healthCheck,
         }
       }),
     }

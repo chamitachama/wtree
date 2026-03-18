@@ -1,4 +1,5 @@
 import chalk from 'chalk'
+import { execSync } from 'child_process'
 import { loadConfig } from '../config.js'
 import { StateManager } from '../state.js'
 import { WorktreeManager } from '../worktree.js'
@@ -6,6 +7,7 @@ import { ProcessManager } from '../processes.js'
 import { assignPorts, resolveEnv } from '../ports.js'
 import { writeStatusDoc } from '../status-writer.js'
 import { isSetupDone, runSetup, copyEnvFiles } from '../setup.js'
+import { sortByDependencies, waitForHealthy } from '../health.js'
 
 const pm = new ProcessManager()
 
@@ -13,13 +15,42 @@ export interface OpenOptions {
   skipSetup?: boolean
 }
 
+async function resolvePrBranch(input: string): Promise<string> {
+  // Check if input is pr/123 or pr#123 format
+  const prMatch = input.match(/^pr[/#](\d+)$/i)
+  if (!prMatch) return input
+  
+  const prNumber = prMatch[1]
+  console.log(chalk.blue(`🔍 Fetching PR #${prNumber} info...`))
+  
+  try {
+    // Get PR branch name using gh CLI
+    const branchName = execSync(`gh pr view ${prNumber} --json headRefName --jq '.headRefName'`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim()
+    
+    // Fetch the branch
+    execSync(`git fetch origin ${branchName}`, { stdio: 'inherit' })
+    
+    console.log(chalk.green(`✓ PR #${prNumber} → ${branchName}`))
+    return branchName
+  } catch (error) {
+    console.error(chalk.red(`Failed to fetch PR #${prNumber}. Is 'gh' CLI installed and authenticated?`))
+    process.exit(1)
+  }
+}
+
 export async function openCommand(branch: string, options: OpenOptions = {}): Promise<void> {
+  // Resolve PR number to branch name if needed
+  const resolvedBranch = await resolvePrBranch(branch)
+  
   const root = process.cwd()
   const config = await loadConfig(root)
   const state = new StateManager(root)
   const wm = new WorktreeManager(root, `${root}/${config.workspacesDir}`)
 
-  const name = branch.replace(/\//g, '-')
+  const name = resolvedBranch.replace(/\//g, '-')
   const existing = await state.get(name)
 
   // Separate shared vs regular services
@@ -72,8 +103,8 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
   // Merge regular ports into allPorts
   Object.assign(allPorts, regularPorts)
 
-  console.log(chalk.blue(`${existing?.status === 'stopped' ? 'Restarting' : 'Opening'} workspace: ${branch}`))
-  const worktreePath = await wm.open(branch)
+  console.log(chalk.blue(`${existing?.status === 'stopped' ? 'Restarting' : 'Opening'} workspace: ${resolvedBranch}`))
+  const worktreePath = await wm.open(resolvedBranch)
 
   // Copy .env files and run setup if not done yet (and not skipped)
   if (!options.skipSetup) {
@@ -86,12 +117,34 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
     }
   }
 
-  // Start regular services in worktree
+  // Start regular services in dependency order
   const pids: Record<string, number> = {}
-  for (const service of regularServices) {
+  const sortedServices = sortByDependencies(regularServices)
+  
+  for (const service of sortedServices) {
+    // Wait for dependencies to be healthy
+    if (service.dependsOn && service.dependsOn.length > 0) {
+      for (const depName of service.dependsOn) {
+        const depService = config.services.find(s => s.name === depName)
+        const depPort = allPorts[depName]
+        if (depService?.healthCheck && depPort) {
+          process.stdout.write(chalk.gray(`  ⏳ Waiting for ${depName}...`))
+          const healthy = await waitForHealthy(depService, depPort, (attempt, max) => {
+            process.stdout.write('.')
+          })
+          if (!healthy) {
+            console.log(chalk.red(` timeout!`))
+            console.error(chalk.red(`\n✗ ${depName} failed health check, cannot start ${service.name}`))
+            process.exit(1)
+          }
+          console.log(chalk.green(' ready'))
+        }
+      }
+    }
+    
     const port = allPorts[service.name]
     const cwd = `${worktreePath}/${service.cwd.replace('./', '')}`
-    const serviceId = `${branch}:${service.name}`
+    const serviceId = `${resolvedBranch}:${service.name}`
     const logFile = `${root}/.wtree/logs/${serviceId.replace(':', '-')}.log`
     pids[service.name] = await pm.start(
       serviceId,
@@ -106,7 +159,7 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
   if (existing?.status === 'stopped') {
     await state.update(name, { pids, ports: regularPorts, status: 'running' })
   } else {
-    await state.add({ name, branch, path: worktreePath, baseBranch: config.defaultBranch, ports: regularPorts, pids, status: 'running', slot })
+    await state.add({ name, branch: resolvedBranch, path: worktreePath, baseBranch: config.defaultBranch, ports: regularPorts, pids, status: 'running', slot })
   }
   await writeStatusDoc(root, state, wm)
 
