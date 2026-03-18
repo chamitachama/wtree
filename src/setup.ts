@@ -7,8 +7,31 @@ import type { SetupCommand, EnvFileConfig } from './config.js'
 const SETUP_MARKER = '.wtree-setup-done'
 
 export async function isSetupDone(worktreePath: string): Promise<boolean> {
+  // Check marker file
+  const hasMarker = await pathExists(join(worktreePath, SETUP_MARKER))
+  if (!hasMarker) return false
+  
+  // Also verify node_modules actually exists (marker could be stale)
+  // Check common locations
+  const possibleNodeModules = [
+    join(worktreePath, 'node_modules'),
+    join(worktreePath, 'frontend', 'node_modules'),
+    join(worktreePath, 'backend', 'node_modules'),
+  ]
+  
+  for (const nmPath of possibleNodeModules) {
+    if (await pathExists(nmPath)) {
+      return true
+    }
+  }
+  
+  // Marker exists but no node_modules found - setup is stale
+  return false
+}
+
+async function pathExists(path: string): Promise<boolean> {
   try {
-    await access(join(worktreePath, SETUP_MARKER))
+    await access(path)
     return true
   } catch {
     return false

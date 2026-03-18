@@ -146,13 +146,29 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
     const cwd = `${worktreePath}/${service.cwd.replace('./', '')}`
     const serviceId = `${resolvedBranch}:${service.name}`
     const logFile = `${root}/.wtree/logs/${serviceId.replace(':', '-')}.log`
-    pids[service.name] = await pm.start(
+    const result = await pm.startWithVerify(
       serviceId,
       service.command,
       cwd,
       { [service.portEnvVar]: String(port), ...resolveEnv(service.env, allPorts, config.infrastructure) },
-      logFile
+      logFile,
+      800 // verify process stays alive for 800ms
     )
+    
+    if (result.exited) {
+      console.log(chalk.red(`✗ ${service.name} crashed immediately (exit code ${result.exitCode})`))
+      if (result.error) {
+        // Show relevant error (command not found, etc)
+        const relevantError = result.error.split('\n').slice(-3).join('\n')
+        console.log(chalk.red(`  ${relevantError}`))
+      }
+      console.log(chalk.yellow(`\nTip: Try running setup manually:`))
+      console.log(chalk.gray(`  cd ${worktreePath}`))
+      console.log(chalk.gray(`  pnpm install  # or npm install`))
+      process.exit(1)
+    }
+    
+    pids[service.name] = result.pid
     console.log(chalk.green(`✓ ${service.name} → http://localhost:${port}`))
   }
 
