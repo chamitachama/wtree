@@ -1,6 +1,6 @@
 {
   "name": "@chamitachama/wtree",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Run multiple git worktrees in parallel with isolated ports",
   "type": "module",
   "main": "dist/index.js",
