@@ -109,4 +109,28 @@ export async function openCommand(branch: string, options: OpenOptions = {}): Pr
     await state.add({ name, branch, path: worktreePath, baseBranch: config.defaultBranch, ports: regularPorts, pids, status: 'running', slot })
   }
   await writeStatusDoc(root, state, wm)
+
+  // Handle Ctrl+C gracefully
+  const cleanup = async () => {
+    console.log(chalk.yellow('\n\nStopping workspace...'))
+    
+    // Kill regular service processes
+    for (const pid of Object.values(pids)) {
+      try { process.kill(pid) } catch { /* already gone */ }
+    }
+    
+    // Update state to stopped (preserves slot/ports for reuse)
+    await state.update(name, { status: 'stopped', pids: {} })
+    await writeStatusDoc(root, state, wm)
+    
+    console.log(chalk.yellow(`Stopped: ${name} (slot ${slot} preserved)`))
+    process.exit(0)
+  }
+
+  process.on('SIGINT', cleanup)
+  process.on('SIGTERM', cleanup)
+
+  // Keep process alive to handle signals
+  console.log(chalk.gray('\nPress Ctrl+C to stop workspace\n'))
+  await new Promise(() => {}) // Block forever until signal
 }
