@@ -5,7 +5,13 @@ Run multiple git worktrees in parallel, each with its own full-stack environment
 ## Install
 
 ```bash
-npm install -g wtree
+npm install -g @chamitachama/wtree
+```
+
+Or with aliases for convenience:
+```bash
+npm install -g @chamitachama/wtree
+alias wtree='npx @chamitachama/wtree'
 ```
 
 ## Quick Start
